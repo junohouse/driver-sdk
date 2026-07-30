@@ -359,6 +359,44 @@ pub enum SetupStep {
         #[serde(default)]
         note: String,
     },
+    /// Exchange bytes over a connection core holds open across several steps.
+    ///
+    /// [`Self::Fetch`] is one request and one response, which cannot express a protocol where
+    /// the device speaks first. A Lutron bridge pushes its button-press confirmation before it
+    /// will accept a signing request, and opening a second connection misses it; so does any
+    /// protocol that greets you, or that answers with acknowledgements ahead of the reply you
+    /// asked for.
+    ///
+    /// The driver still never touches a socket. It says where to connect, what to send, and
+    /// how long to listen; core owns the connection, the TLS, and the deadline. What came back
+    /// arrives as raw bytes in `input.received`, with the connection's id in `input.session` —
+    /// pass that back to keep using it. **Framing is the driver's job**: core returns whatever
+    /// arrived within the window and does not know where one message ends.
+    ///
+    /// Connections live as long as the run of steps that opened them, and close on their own
+    /// when the flow next needs a person or finishes.
+    Session {
+        /// An id from a previous step's `input.session`. Absent opens a new connection.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session: Option<u32>,
+        /// Where to connect. Required when opening, ignored when continuing.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        open: Option<Connect>,
+        /// Written before listening. Empty listens without sending, which is how you receive
+        /// a greeting the device sends unprompted.
+        #[serde(default)]
+        send: String,
+        /// How long to listen. Core returns everything that arrived in the window, which may
+        /// be nothing.
+        #[serde(default = "half_second")]
+        read_ms: u32,
+        /// Close afterwards. A flow that ends without this still closes; saying so is for
+        /// devices that allow one connection at a time.
+        #[serde(default)]
+        close: bool,
+        #[serde(default)]
+        note: String,
+    },
     /// Nothing to do yet — try again shortly. Waiting for a link button press.
     Wait {
         title: String,
@@ -375,6 +413,72 @@ pub enum SetupStep {
 
 fn one_second() -> u32 {
     1000
+}
+
+fn half_second() -> u32 {
+    500
+}
+
+/// Where a [`SetupStep::Session`] should connect, and how.
+///
+/// Deliberately says nothing about what is spoken over it. Core opens the socket, does the
+/// handshake, and hands back bytes; every protocol above that belongs to the driver that
+/// understands it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Connect {
+    pub host: String,
+    pub port: u16,
+    /// Wrap in TLS.
+    ///
+    /// A device on your own network is accepted on the strength of the pairing secret it gave
+    /// you, not its certificate — bridges present self-signed certificates no public CA has
+    /// heard of, so verifying against the public roots would reject every one of them.
+    #[serde(default)]
+    pub tls: bool,
+    /// Present a client certificate during the handshake, for a device that demands mutual
+    /// TLS. Both must be PEM, and both must be set for either to be used.
+    ///
+    /// These never leave the process — core reads them straight out of this struct — so a
+    /// per-installation key does not go on any wire to get here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_cert: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_key: Option<String>,
+}
+
+impl Connect {
+    pub fn tcp(host: impl Into<String>, port: u16) -> Connect {
+        Connect {
+            host: host.into(),
+            port,
+            ..Default::default()
+        }
+    }
+
+    pub fn tls(host: impl Into<String>, port: u16) -> Connect {
+        Connect {
+            host: host.into(),
+            port,
+            tls: true,
+            ..Default::default()
+        }
+    }
+
+    /// Mutual TLS, presenting `cert`/`key` during the handshake.
+    pub fn mutual_tls(
+        host: impl Into<String>,
+        port: u16,
+        cert: impl Into<String>,
+        key: impl Into<String>,
+    ) -> Connect {
+        Connect {
+            host: host.into(),
+            port,
+            tls: true,
+            client_cert: Some(cert.into()),
+            client_key: Some(key.into()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
