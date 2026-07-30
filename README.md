@@ -1,10 +1,10 @@
-# juno-driver-sdk
+# driver-sdk
 
 Write a driver for a [Juno](https://juno.house) controller.
 
 ```toml
 [dependencies]
-juno-driver-sdk = { git = "https://github.com/junohouse/juno-driver-sdk", tag = "v0.1.0" }
+driver-sdk = { git = "https://github.com/junohouse/driver-sdk", tag = "v0.1.0" }
 serde_json = "1"
 
 [lib]
@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 ```
 
 ```rust
-use juno_driver_sdk::*;
+use driver_sdk::*;
 
 #[derive(Default)]
 struct MyLight;

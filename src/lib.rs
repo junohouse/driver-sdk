@@ -3,7 +3,7 @@
 //! A driver is one type implementing [`DriverModule`] and one line of glue:
 //!
 //! ```ignore
-//! use juno_driver_sdk::*;
+//! use driver_sdk::*;
 //!
 //! struct MyLight;
 //!
