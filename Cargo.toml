@@ -1,0 +1,16 @@
+[package]
+name = "juno-driver-sdk"
+version = "0.1.0"
+edition = "2024"
+description = "Write a driver for a Juno controller"
+repository = "https://github.com/junohouse/juno-driver-sdk"
+license = "MIT OR Apache-2.0"
+
+# Nothing of Juno's. This crate is the contract between a controller and a driver, so it owns
+# the types on both sides of it rather than borrowing them from the controller — which is what
+# lets a driver be built by anyone, without access to a private repository.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[workspace]
