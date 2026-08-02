@@ -135,6 +135,16 @@ impl Instance {
 /// `&self` is deliberate: a module that wanted per-device mutable state would have to put it
 /// in [`Instance`], which is exactly where it belongs.
 pub trait DriverModule: Send + Sync {
+    /// Run a driver-declared action. See the manifest's `[[action]]`.
+    ///
+    /// Defaulted to nothing on purpose: an action can only be invoked if the driver's own
+    /// manifest declares it, so a driver built before actions existed is never asked to run
+    /// one. That is what lets this land without an ABI bump — the manifest is the gate, not the
+    /// trait.
+    fn on_action(&self, _inst: &mut Instance, _action: &str, _args: &Args) -> Vec<HostCall> {
+        Vec::new()
+    }
+
     fn on_command(
         &self,
         inst: &mut Instance,
@@ -204,6 +214,15 @@ pub trait DriverModule: Send + Sync {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "fn", rename_all = "snake_case")]
 pub enum Request {
+    /// A driver-declared action. Gated by the manifest, so a driver built before actions
+    /// existed is never sent one and needs no rebuild.
+    OnAction {
+        #[serde(default)]
+        driver_id: String,
+        action: String,
+        args: Args,
+        instance: Instance,
+    },
     OnCommand {
         /// Which of the package's drivers this is for.
         #[serde(default)]
@@ -502,6 +521,15 @@ pub struct Response {
 /// out-of-process runtime, so all of them behave identically.
 pub fn dispatch(module: &dyn DriverModule, request: Request) -> Response {
     let (calls, instance) = match request {
+        Request::OnAction {
+            driver_id: _,
+            action,
+            args,
+            mut instance,
+        } => {
+            let calls = module.on_action(&mut instance, &action, &args);
+            (calls, Some(instance))
+        }
         Request::OnCommand {
             driver_id: _,
             proxy,
