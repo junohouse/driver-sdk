@@ -1,0 +1,207 @@
+//! The registry index format.
+//!
+//! What a catalog of drivers looks like on the wire: which drivers exist, where their builds
+//! are, and which core versions each build can run on. Controllers fetch it, the public
+//! catalog site renders it, and a driver's CI emits a row for the package it just built.
+//!
+//! It lives here for that last reason. Emitting an index row is part of publishing a driver,
+//! and a driver's CI should not need read access to the controller's repository to describe
+//! the artifact it has in its hand.
+//!
+//! What is *not* here is fetching or downloading. Deciding to reach out to the network, and
+//! verifying what comes back, is a controller's job — see `junod`.
+
+use crate::sddp::SddpMatch;
+use serde::{Deserialize, Serialize};
+
+/// Bumped when the index format changes incompatibly. Core refuses an index it cannot read
+/// rather than silently showing a partial catalog.
+pub const SUPPORTED_SCHEMA: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Index {
+    pub schema: u32,
+    #[serde(default)]
+    pub generated: String,
+    #[serde(default)]
+    pub drivers: Vec<Entry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Entry {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub manufacturer: String,
+    /// Driver id of the bridge these devices live behind, straight from the manifest's
+    /// [`crate::driver::manifest::DriverMeta::parent`].
+    ///
+    /// The runtime has always known this — a child reads its parent's properties rather than
+    /// carrying its own copy of the bridge address. It is in the index so the catalog can show
+    /// a product the way it is actually installed, without a reader guessing the hierarchy
+    /// back out of id prefixes and getting it wrong.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// `Juno-Certified-Drivers/sony-bravia-ip`. The provenance claim.
+    #[serde(default)]
+    pub repo: String,
+    #[serde(default)]
+    pub proxies: Vec<String>,
+    #[serde(default)]
+    pub runtime: String,
+    #[serde(default)]
+    pub description: String,
+    /// Carried in the *index* so core can match a device found on the network against
+    /// drivers that are not installed yet.
+    #[serde(default)]
+    pub discovery: DiscoveryHints,
+    #[serde(default)]
+    pub versions: Vec<Release>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DiscoveryHints {
+    #[serde(default)]
+    pub mdns: Vec<String>,
+    #[serde(default)]
+    pub ssdp: Vec<String>,
+    /// What an SDDP announcement has to look like. See [`SddpMatch`].
+    #[serde(default)]
+    pub sddp: Vec<SddpMatch>,
+    /// First three octets of the MAC, any separator style.
+    #[serde(default)]
+    pub mac_oui: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Release {
+    pub version: String,
+    /// Which core versions can run this build, as a semver requirement (`">=0.4"`).
+    #[serde(rename = "core", default)]
+    pub core_req: String,
+    pub url: String,
+    #[serde(default)]
+    pub sha256: String,
+    #[serde(default)]
+    pub size: u64,
+}
+
+/// What a discovery probe saw on the network.
+#[derive(Debug, Clone, Default)]
+pub struct Discovered {
+    pub mdns: Vec<String>,
+    pub ssdp: Vec<String>,
+    /// Whole announcements, not just their type — matching happens across several of their
+    /// fields at once, so the fields have to survive this far.
+    pub sddp: Vec<crate::sddp::Found>,
+    pub mac: Option<String>,
+}
+
+/// Normalise a MAC or OUI to bare uppercase hex so `FC:F1:52`, `fc-f1-52` and `FCF152` all
+/// compare equal. Vendors are not consistent and neither are driver authors.
+fn norm_mac(s: &str) -> String {
+    s.chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .map(|c| c.to_ascii_uppercase())
+        .collect()
+}
+
+impl Index {
+    pub fn parse(src: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(src)
+    }
+
+    /// Refuse an index from a newer format rather than showing a partial catalog.
+    pub fn check_schema(&self) -> Result<(), String> {
+        if self.schema > SUPPORTED_SCHEMA {
+            return Err(format!(
+                "registry index is schema {} but this core understands {SUPPORTED_SCHEMA} — \
+                 update core",
+                self.schema
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn get(&self, id: &str) -> Option<&Entry> {
+        self.drivers.iter().find(|d| d.id == id)
+    }
+
+    /// Drivers that could plausibly be for a device we just found on the network. This is
+    /// what turns the Discovery list from a dead end into one click.
+    pub fn match_discovery(&self, found: &Discovered) -> Vec<&Entry> {
+        let mac = found.mac.as_deref().map(norm_mac);
+        self.drivers
+            .iter()
+            .filter(|d| {
+                let h = &d.discovery;
+                let service_hit = |theirs: &[String], ours: &[String]| {
+                    theirs.iter().any(|t| ours.iter().any(|o| o == t))
+                };
+                service_hit(&h.mdns, &found.mdns)
+                    || service_hit(&h.ssdp, &found.ssdp)
+                    || h.sddp
+                        .iter()
+                        .any(|rule| found.sddp.iter().any(|a| rule.matches(a)))
+                    || mac.as_ref().is_some_and(|m| {
+                        h.mac_oui
+                            .iter()
+                            .any(|o| m.starts_with(&norm_mac(o)) && !norm_mac(o).is_empty())
+                    })
+            })
+            .collect()
+    }
+
+    /// Every driver providing a given proxy — "what can I use for a thermostat?"
+    pub fn providing(&self, proxy: &str) -> Vec<&Entry> {
+        self.drivers
+            .iter()
+            .filter(|d| d.proxies.iter().any(|p| p == proxy))
+            .collect()
+    }
+}
+
+impl Entry {
+    /// The newest release this core can actually run.
+    ///
+    /// Resolution lives here, not in the registry, on purpose: a registry that assumed every
+    /// controller was current would strand exactly the installations least able to update.
+    pub fn best_for(&self, core_version: &semver::Version) -> Option<&Release> {
+        self.versions
+            .iter()
+            .filter(|r| r.runs_on(core_version))
+            .filter_map(|r| r.semver().map(|v| (v, r)))
+            .max_by(|(a, _), (b, _)| a.cmp(b))
+            .map(|(_, r)| r)
+    }
+
+    /// Releases this core cannot run, newest first — so the UI can say *why* an update is not
+    /// being offered instead of just hiding it.
+    pub fn blocked_for(&self, core_version: &semver::Version) -> Vec<&Release> {
+        let mut out: Vec<_> = self
+            .versions
+            .iter()
+            .filter(|r| !r.runs_on(core_version))
+            .collect();
+        out.sort_by(|a, b| b.semver().cmp(&a.semver()));
+        out
+    }
+}
+
+impl Release {
+    pub fn semver(&self) -> Option<semver::Version> {
+        semver::Version::parse(&self.version).ok()
+    }
+
+    pub fn runs_on(&self, core_version: &semver::Version) -> bool {
+        if self.core_req.trim().is_empty() {
+            return true;
+        }
+        match semver::VersionReq::parse(&self.core_req) {
+            Ok(req) => req.matches(core_version),
+            // An unparseable requirement is the registry's bug, not the user's. Refusing to
+            // install is safer than guessing it is compatible.
+            Err(_) => false,
+        }
+    }
+}

@@ -78,6 +78,9 @@ pub use serde_json::{Value, json};
 ///
 /// Anything that *validates* turns them on: a controller, a packager, or a driver's own test
 /// that wants to check its manifest against the real contracts rather than hope.
+/// The registry index format — what a catalog of drivers looks like on the wire.
+#[cfg(feature = "contracts")]
+pub mod catalog;
 #[cfg(feature = "contracts")]
 pub mod manifest;
 #[cfg(feature = "contracts")]

@@ -1,6 +1,6 @@
 [package]
 name = "driver-sdk"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 description = "Write a driver for a Juno controller"
 repository = "https://github.com/junohouse/driver-sdk"
@@ -21,6 +21,7 @@ serde_json = "1"
 # Only for the feature-gated halves. A driver that just implements `DriverModule` compiles
 # none of this.
 anyhow = { version = "1", optional = true }
+semver = { version = "1", optional = true }
 toml = { version = "0.9", optional = true }
 zip = { version = "6", optional = true, default-features = false, features = ["deflate"] }
 
@@ -33,7 +34,7 @@ required-features = ["pack"]
 default = []
 # The proxy contracts and the manifest format: everything needed to check that a driver
 # declares something a controller would accept.
-contracts = ["dep:anyhow", "dep:toml"]
+contracts = ["dep:anyhow", "dep:semver", "dep:toml"]
 # Building and reading `.junodrv` archives.
 pack = ["contracts", "dep:zip"]
 
