@@ -1,0 +1,98 @@
+name = "light"
+version = 1
+title = "Light"
+category = "lighting"
+description = "A controllable light load — switched, dimmed, tunable, or full colour."
+
+[capabilities]
+dimmer                = { type = "bool", default = false, doc = "Supports levels between off and on" }
+supports_color        = { type = "bool", default = false, doc = "Full hue/saturation colour" }
+supports_cct          = { type = "bool", default = false, doc = "Tunable correlated colour temperature" }
+cct_min               = { type = "u32",  default = 2700 }
+cct_max               = { type = "u32",  default = 6500 }
+supports_ramp         = { type = "bool", default = false, doc = "Honours a ramp time on level changes" }
+ramp_rate_max_ms      = { type = "u32",  default = 0 }
+supports_target       = { type = "bool", default = false, doc = "Can be told to ramp toward a level over time and report progress" }
+min_on_level          = { type = "u8",   default = 1,   doc = "Lowest level the load will hold without flicker" }
+max_on_level          = { type = "u8",   default = 100 }
+has_button_events     = { type = "bool", default = false, doc = "Physical keypad on the load reports presses" }
+load_group_support    = { type = "bool", default = false, doc = "Can join a synchronised group at the device level" }
+
+[commands.on]
+title = "Turn on"
+[commands.off]
+title = "Turn off"
+[commands.toggle]
+title = "Toggle"
+
+[commands.set_level]
+title = "Set brightness"
+doc = "Set brightness. 0 is off."
+requires = "dimmer"
+params.level   = { type = "u8",  min = 0, max = 100 }
+params.ramp_ms = { type = "u32", optional = true }
+
+[commands.ramp_start]
+title = "Start dimming"
+doc = "Begin ramping in a direction until stopped — for held keypad buttons"
+requires = "dimmer"
+params.direction = { type = "string", values = ["up", "down"] }
+
+[commands.ramp_stop]
+title = "Stop dimming"
+requires = "dimmer"
+
+[commands.set_color]
+title = "Set colour"
+requires = "supports_color"
+params.hue     = { type = "f32", min = 0.0, max = 360.0 }
+params.sat     = { type = "f32", min = 0.0, max = 100.0 }
+params.ramp_ms = { type = "u32", optional = true }
+
+[commands.set_cct]
+title = "Set colour temperature"
+requires = "supports_cct"
+params.kelvin  = { type = "u32", min = 1000, max = 10000, min_cap = "cct_min", max_cap = "cct_max" }
+params.ramp_ms = { type = "u32", optional = true }
+
+[notifications.level_changed]
+title = "Brightness changed"
+doc = "Settled at a level"
+params.level = { type = "u8", min = 0, max = 100 }
+
+[notifications.level_changing]
+title = "Brightness changing"
+doc = "Mid-ramp progress. Rate-limited by the driver; core does not persist these."
+params.level = { type = "u8", min = 0, max = 100 }
+
+[notifications.color_changed]
+title = "Colour changed"
+requires = "supports_color"
+params.hue = { type = "f32" }
+params.sat = { type = "f32" }
+
+[notifications.cct_changed]
+title = "Colour temperature changed"
+requires = "supports_cct"
+params.kelvin = { type = "u32" }
+
+[notifications.button_action]
+title = "Button pressed"
+requires = "has_button_events"
+params.button = { type = "string" }
+params.action = { type = "string", values = ["press", "release", "click", "double", "hold"] }
+
+[notifications.online_changed]
+title = "Reachability changed"
+params.online = { type = "bool" }
+
+[state]
+level  = { title = "Brightness", type = "u8" }
+# A light is on when its level is above zero. Maintained by core from `level` so a driver never
+# reports both and cannot report them disagreeing — and so a rule, a tile, and the suggestion
+# miner all mean the same thing by "the light is on".
+on     = { title = "On", type = "bool", truthy_of = "level" }
+hue    = { title = "Hue", type = "f32" }
+sat    = { title = "Saturation", type = "f32" }
+kelvin = { title = "Colour temperature", type = "u32" }
+online = { title = "Reachable", type = "bool" }

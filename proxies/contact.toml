@@ -1,0 +1,34 @@
+name = "contact"
+version = 1
+title = "Contact Input"
+category = "connection"
+description = """
+A single dry-contact sense input. Devices with a bank of inputs expose one binding per input.
+Consumed by drivers that declare a `contact` control connection — a garage door driver reading
+its own limit switch, for example — and usable directly as an automation trigger.
+"""
+
+[capabilities]
+supports_voltage_sense = { type = "bool", default = false, doc = "Reports analog voltage as well as open/closed" }
+voltage_max_mv         = { type = "u32",  default = 0 }
+has_debounce           = { type = "bool", default = false, doc = "Debounce interval is configurable" }
+
+[commands.set_debounce]
+requires = "has_debounce"
+params.ms = { type = "u32", min = 0, max = 10000 }
+
+[notifications.contact_changed]
+title = "Opened or closed"
+params.closed = { type = "bool" }
+
+[notifications.voltage_changed]
+requires = "supports_voltage_sense"
+params.mv = { type = "u32" }
+
+[notifications.online_changed]
+params.online = { type = "bool" }
+
+[state]
+closed = { title = "Closed", type = "bool" }
+mv     = { type = "u32" }
+online = { type = "bool" }

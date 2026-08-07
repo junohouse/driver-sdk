@@ -1,6 +1,6 @@
 [package]
 name = "driver-sdk"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 description = "Write a driver for a Juno controller"
 repository = "https://github.com/junohouse/driver-sdk"
@@ -9,8 +9,32 @@ license = "MIT OR Apache-2.0"
 # Nothing of Juno's. This crate is the contract between a controller and a driver, so it owns
 # the types on both sides of it rather than borrowing them from the controller — which is what
 # lets a driver be built by anyone, without access to a private repository.
+#
+# That argument applies to the *contracts* as much as to the types, which is why `proxies/` and
+# the manifest format live here too. A driver author who cannot read the proxy contracts cannot
+# check their own manifest, and until this moved they needed access to a private repository to
+# do it — which made "anyone can build a driver" true only up to the point it mattered.
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Only for the feature-gated halves. A driver that just implements `DriverModule` compiles
+# none of this.
+anyhow = { version = "1", optional = true }
+toml = { version = "0.9", optional = true }
+zip = { version = "6", optional = true, default-features = false, features = ["deflate"] }
+
+[[bin]]
+name = "junodrv"
+path = "src/bin/junodrv.rs"
+required-features = ["pack"]
+
+[features]
+default = []
+# The proxy contracts and the manifest format: everything needed to check that a driver
+# declares something a controller would accept.
+contracts = ["dep:anyhow", "dep:toml"]
+# Building and reading `.junodrv` archives.
+pack = ["contracts", "dep:zip"]
 
 [workspace]

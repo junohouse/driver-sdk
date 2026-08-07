@@ -1,0 +1,101 @@
+name = "sensor"
+version = 1
+title = "Sensor"
+category = "environment"
+description = """
+A measurement or detection. One binding per measured quantity — a multi-sensor declares several
+bindings of this proxy rather than one binding with several values, so an automation can trigger on
+exactly one thing.
+
+Read-only for almost every device, and the commands below exist because presence sensors are the
+exception. An mmWave sensor decides for itself how long to keep saying somebody is there after it
+stops seeing them, and that hold is the difference between a lighting rule that works and one that
+switches off on a person sitting still — so it has to be reachable. It is gated, like everything
+else here: a temperature probe resolves to no commands at all and stays exactly as read-only as it
+was.
+
+The line these commands sit on is worth stating, because it is the same line `requires` draws
+everywhere. A hold is a property of *presence sensing*, which every vendor's presence sensor has, so
+it belongs in this contract. Opening a Zigbee mesh for joining is a property of one particular
+bridge, so it is an action and not in any contract.
+"""
+
+[capabilities]
+kind = { type = "string", default = "generic", doc = "temperature | humidity | motion | occupancy | door | window | water | smoke | co | lux | air_quality | power | generic" }
+unit = { type = "string", default = "", doc = "Display unit; empty for boolean sensors" }
+is_boolean   = { type = "bool", default = false, doc = "Reports detected/clear rather than a number" }
+value_min    = { type = "f32",  default = 0.0 }
+value_max    = { type = "f32",  default = 0.0 }
+has_battery  = { type = "bool", default = false }
+auto_clear_seconds = { type = "u32", default = 0, doc = "Boolean sensors: how long until it self-clears. 0 = it reports its own clear." }
+
+# Whether the device manages a hold of its own, and can be told what it should be.
+#
+# Distinct from `auto_clear_seconds`, which is *core* clearing a detection the device will never
+# clear. This is the device's own timer, and the two must not be confused: a sensor that holds for
+# ninety seconds and reports its own clear wants `hold_seconds = 90, auto_clear_seconds = 0`, and
+# reading that as "core clears it after 90" would fight the device.
+has_adjustable_hold = { type = "bool", default = false, doc = "Its hold can be set — see set_hold_seconds" }
+hold_min = { type = "u32", default = 0, doc = "Shortest hold this device accepts" }
+hold_max = { type = "u32", default = 0, doc = "Longest hold this device accepts" }
+has_adjustable_sensitivity = { type = "bool", default = false }
+
+[commands.set_hold_seconds]
+title = "Hold for"
+requires = "has_adjustable_hold"
+doc = """
+How long the device keeps reporting a detection after it stops seeing anything.
+
+The setting that decides whether a presence sensor is useful. Factory defaults are short — fifteen
+seconds is common — because a short hold demonstrates well on a shelf, and it is far too short for
+anything that switches a light: the room reads as empty while somebody is still sitting in it.
+
+Bounded per device by `hold_min`/`hold_max`, because the accepted range is a property of the
+hardware and a value outside it is silently clamped rather than refused.
+"""
+params.seconds = { type = "u32", min_cap = "hold_min", max_cap = "hold_max" }
+
+[commands.set_sensitivity]
+title = "Sensitivity"
+requires = "has_adjustable_sensitivity"
+doc = """
+How readily the device decides something is there. Turned down where it sees through a wall or picks
+up a curtain, and up where somebody sitting still stops registering.
+
+Three steps rather than a number, because the underlying scale is arbitrary, vendor-specific and not
+comparable between devices — offering "47" would imply a precision that does not exist.
+"""
+params.level = { type = "string", values = ["low", "medium", "high"] }
+
+[notifications.value_changed]
+title = "Reading changed"
+params.value = { type = "f32" }
+
+[notifications.detected_changed]
+title = "Detection changed"
+requires = "is_boolean"
+params.detected = { type = "bool" }
+
+[notifications.hold_changed]
+title = "Hold changed"
+requires = "has_adjustable_hold"
+doc = "What the device's hold is now. Sent after a set, and when it is first read."
+params.seconds = { type = "u32" }
+
+[notifications.battery_changed]
+title = "Battery changed"
+requires = "has_battery"
+params.percent = { type = "u8", min = 0, max = 100 }
+
+[notifications.online_changed]
+title = "Reachability changed"
+params.online = { type = "bool" }
+
+[state]
+value    = { title = "Reading", type = "f32" }
+# What the device's own hold is currently set to, so a UI can show it and a second look does not
+# have to ask the device again. Reported by the driver after a successful set, and on discovery.
+hold_seconds = { title = "Holds for", type = "u32" }
+detected = { title = "Detected", type = "bool" }
+battery  = { title = "Battery", type = "u8", from = "percent" }
+online   = { title = "Reachable", type = "bool" }

@@ -1,0 +1,58 @@
+name = "av_switch"
+version = 1
+title = "AV Switch"
+category = "av"
+description = """
+Anything that routes signal: an HDMI matrix, a distribution amp, a video switcher. The
+crosspoint capabilities below are what the pathfinder uses to derive internal edges from
+each input to each output.
+
+A receiver is not this — it is `receiver`, which switches *and* has volume and a room
+association. Use this for devices that only move signal.
+"""
+
+[capabilities]
+audio_consumer_count = { type = "u32",  default = 0, doc = "Audio inputs" }
+audio_provider_count = { type = "u32",  default = 0, doc = "Audio outputs" }
+video_consumer_count = { type = "u32",  default = 0 }
+video_provider_count = { type = "u32",  default = 0 }
+can_switch_separately      = { type = "bool", default = false, doc = "Audio and video may be routed to different destinations" }
+requires_separate_switching = { type = "bool", default = false, doc = "They MUST be routed separately; the pathfinder solves two paths" }
+is_matrix            = { type = "bool", default = false, doc = "Any input can reach any output. If false, outputs mirror one selected input." }
+supports_disconnect  = { type = "bool", default = true,  doc = "An output can be switched off rather than always carrying something" }
+switch_delay_ms      = { type = "u32",  default = 0, doc = "Settle time after a crosspoint change" }
+
+[commands.set_input]
+doc = "Route an input to the default/only output"
+params.input = { type = "u32", doc = "Signal connection id" }
+
+[commands.set_output_input]
+doc = "Route `input` to `output`. The matrix command."
+requires = "is_matrix"
+params.input  = { type = "u32" }
+params.output = { type = "u32" }
+
+[commands.disconnect_output]
+requires = "supports_disconnect"
+params.output = { type = "u32" }
+
+[commands.pulse_input]
+doc = "Cycle inputs — for switches with no discrete selection"
+
+[commands.on]
+[commands.off]
+
+[notifications.route_changed]
+doc = "One crosspoint changed. Emitted once per affected output."
+params.input  = { type = "u32" }
+params.output = { type = "u32" }
+
+[notifications.power_changed]
+params.on = { type = "bool" }
+
+[notifications.online_changed]
+params.online = { type = "bool" }
+
+[state]
+on     = { type = "bool" }
+online = { type = "bool" }

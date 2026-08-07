@@ -1,0 +1,41 @@
+name = "ir_out"
+version = 1
+title = "IR Output"
+category = "connection"
+description = """
+A single infrared emitter port. Devices with a bank of emitters expose one binding per port.
+
+Consuming drivers send a code, not a waveform: a declarative driver names a code from its own
+`commands.toml` code table and core hands the emitter the pronto/hex payload. The consuming
+driver therefore works identically on a controller's 3.5 mm emitter jack, a Global Caché
+iTach, or a USB blaster.
+"""
+
+[capabilities]
+carrier_configurable = { type = "bool", default = false, doc = "Carrier frequency can be set per code" }
+supports_repeat      = { type = "bool", default = true,  doc = "Can hold a code repeating until stopped" }
+max_code_bytes       = { type = "u32",  default = 2048 }
+has_blast_all        = { type = "bool", default = false, doc = "Port can emit on all outputs at once" }
+
+[commands.send]
+doc = "Emit a code once, or `repeats` extra times"
+params.code    = { type = "string", doc = "Pronto hex or Juno IR code, resolved by the sender" }
+params.repeats = { type = "u8", optional = true, min = 0, max = 20 }
+
+[commands.start_repeat]
+doc = "Begin emitting continuously — for volume ramps and channel scans"
+requires = "supports_repeat"
+params.code = { type = "string" }
+
+[commands.stop_repeat]
+requires = "supports_repeat"
+
+[commands.set_carrier]
+requires = "carrier_configurable"
+params.hz = { type = "u32", min = 0, max = 500000 }
+
+[notifications.online_changed]
+params.online = { type = "bool" }
+
+[state]
+online = { type = "bool" }

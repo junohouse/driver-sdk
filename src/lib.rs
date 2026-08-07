@@ -28,7 +28,8 @@
 //! ```
 //!
 //! `cargo build --release` produces the driver file; `junod pack` wraps it and the manifest
-//! into a `.junodrv` that a controller can install.
+//! into a `.junodrv` that a controller can install — or `--features pack` and you can build
+//! one from your own tests, without a controller anywhere.
 //!
 //! # This crate depends on nothing of Juno's
 //!
@@ -38,7 +39,18 @@
 //! depends on this crate, drivers depend on this crate, and writing a driver needs no access
 //! to anything of ours.
 //!
-//! Only `serde` and `serde_json` are needed, because the boundary is JSON either way.
+//! That argument applies to the *contracts* as much as to the types. The proxy definitions in
+//! `proxies/`, the manifest format, and the `.junodrv` layout all live here now, because a
+//! driver author who cannot read a contract cannot check their own manifest against it — and
+//! until this moved, checking it meant access to a private repository. "Anyone can build a
+//! driver" was true right up to the point it mattered.
+//!
+//! Only `serde` and `serde_json` are needed to *write* a driver, because the boundary is JSON
+//! either way. The contracts and the packager are behind [`contracts`] and [`pack`] features
+//! so that nobody pays for a TOML parser and a zip implementation to implement four methods.
+//!
+//! [`contracts`]: https://docs.rs/crate/driver-sdk/latest/features
+//! [`pack`]: https://docs.rs/crate/driver-sdk/latest/features
 //!
 //! # What the macro does
 //!
@@ -47,13 +59,36 @@
 //! version mismatch. You do not call these; they exist so `unsafe` lives here rather than in
 //! every driver.
 
+pub mod adapter;
 pub mod host;
+pub mod sddp;
 
 pub use host::{
     Args, Candidate, Connect, DeviceId, DriverModule, Field, HostCall, HttpRequest, Instance,
     PickRow, Request, Response, SetupStep, dispatch,
 };
 pub use serde_json::{Value, json};
+
+/// The device-class contracts, and the manifest format that declares against them.
+///
+/// Behind a feature because of what they cost to compile, not because they are optional to the
+/// design. A driver only needs the types above — it declares its capabilities in a manifest
+/// somebody else parses — so making every driver build a TOML parser to write forty lines of
+/// Lua-equivalent glue would be a tax on exactly the people this crate exists to serve.
+///
+/// Anything that *validates* turns them on: a controller, a packager, or a driver's own test
+/// that wants to check its manifest against the real contracts rather than hope.
+#[cfg(feature = "contracts")]
+pub mod manifest;
+#[cfg(feature = "contracts")]
+pub mod proxy;
+
+/// Reading and writing `.junodrv` packages.
+///
+/// Separate from `contracts` because it pulls in a zip implementation, and validating a
+/// manifest is far more common than building an archive.
+#[cfg(feature = "pack")]
+pub mod package;
 
 /// Identifies one proxy, control, or connection *within a single driver's manifest*.
 ///

@@ -1,0 +1,83 @@
+name = "receiver"
+version = 1
+title = "Receiver"
+category = "av"
+description = "An AVR or integrated amp: switches signal, owns volume, and usually drives a room's speakers."
+
+[capabilities]
+audio_consumer_count = { type = "u32",  default = 0 }
+audio_provider_count = { type = "u32",  default = 0 }
+video_consumer_count = { type = "u32",  default = 0 }
+video_provider_count = { type = "u32",  default = 0 }
+has_discrete_power   = { type = "bool", default = false }
+has_discrete_input   = { type = "bool", default = false }
+has_discrete_volume  = { type = "bool", default = false }
+has_discrete_mute    = { type = "bool", default = false }
+volume_max           = { type = "u32",  default = 100 }
+zone_count           = { type = "u32",  default = 1, doc = "Independent output zones. Each is a separate binding of this proxy." }
+requires_separate_switching = { type = "bool", default = false }
+has_surround_modes   = { type = "bool", default = false }
+surround_modes       = { type = "string_list", default = [] }
+has_tone_control     = { type = "bool", default = false }
+warmup_ms            = { type = "u32",  default = 0 }
+
+[commands.on]
+[commands.off]
+[commands.power_toggle]
+
+[commands.set_input]
+params.input = { type = "u32", doc = "Signal connection id" }
+
+[commands.set_output_input]
+requires = "requires_separate_switching"
+params.input  = { type = "u32" }
+params.output = { type = "u32" }
+
+[commands.set_volume]
+requires = "has_discrete_volume"
+params.level = { type = "u32", min = 0, max = 100 }
+
+[commands.volume_up]
+[commands.volume_down]
+
+[commands.set_mute]
+requires = "has_discrete_mute"
+params.mute = { type = "bool" }
+
+[commands.mute_toggle]
+
+[commands.set_surround_mode]
+requires = "has_surround_modes"
+params.mode = { type = "string" }
+
+[commands.set_tone]
+requires = "has_tone_control"
+params.bass   = { type = "i32", optional = true, min = -12, max = 12 }
+params.treble = { type = "i32", optional = true, min = -12, max = 12 }
+
+[notifications.power_changed]
+params.on = { type = "bool" }
+
+[notifications.input_changed]
+params.input = { type = "u32" }
+
+[notifications.volume_changed]
+params.level = { type = "u32" }
+
+[notifications.mute_changed]
+params.mute = { type = "bool" }
+
+[notifications.surround_mode_changed]
+requires = "has_surround_modes"
+params.mode = { type = "string" }
+
+[notifications.online_changed]
+params.online = { type = "bool" }
+
+[state]
+on       = { type = "bool" }
+input    = { type = "u32" }
+volume   = { type = "u32", from = "level" }
+mute     = { type = "bool" }
+surround = { type = "string", from = "mode" }
+online   = { type = "bool" }

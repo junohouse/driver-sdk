@@ -1,0 +1,103 @@
+name = "weather"
+version = 1
+title = "Weather"
+category = "environment"
+description = """
+Conditions outside, and what they are about to be.
+
+A proxy rather than a special case, and that is the whole point of it. An enormous share of the
+automation people actually want is conditioned on the weather — close the blinds on a hot
+afternoon, warm the house before a cold morning, do not water the garden when it is about to
+rain — and every one of those needs the outside world to be something a rule can *test*.
+
+Made ordinary, it composes with everything already built: a `Trigger::State` fires on it, a
+`Condition::State` qualifies on it, the miner correlates against it, the reviewer sees it in the
+house digest, and the assistant can answer "is it going to be cold tonight" through the same tool
+surface it uses for a lamp. Made a special case, every one of those would need its own plumbing.
+
+One binding per location — normally just the house. A driver fills this from wherever it likes: a
+public forecast API, a hardware station on the roof, a neighbour's feed. Core does not care, which
+is the same bargain every other proxy makes.
+
+`forecast_*` is the part worth having. Reacting to weather that has already arrived is a thermostat;
+acting on weather that is coming is the difference between a house that copes and a house that was
+ready.
+"""
+
+[capabilities]
+has_forecast = { type = "bool", default = false, doc = "Reports what is coming, not only what is" }
+has_rain = { type = "bool", default = false, doc = "Reports precipitation" }
+has_wind = { type = "bool", default = false, doc = "Reports wind speed" }
+has_uv = { type = "bool", default = false, doc = "Reports a UV index" }
+has_air_quality = { type = "bool", default = false }
+forecast_hours = { type = "u32", default = 0, doc = "How far ahead the forecast reaches" }
+
+# Nothing to command. A driver polls and reports; a rule reads. Included as a proxy with no
+# commands on purpose — the resolved command set for this is empty, and the UI will draw it as a
+# reading rather than a control without being told to.
+
+[notifications.conditions_changed]
+title = "Conditions changed"
+doc = "What it is like outside now."
+params.temperature_c = { type = "f32", optional = true }
+params.humidity = { type = "f32", min = 0.0, max = 100.0, optional = true }
+params.condition = { type = "string", optional = true, values = [
+  "clear", "cloudy", "overcast", "fog", "rain", "snow", "sleet", "hail", "storm",
+] }
+
+[notifications.forecast_changed]
+title = "Forecast changed"
+requires = "has_forecast"
+doc = """
+What is coming. Deliberately coarse — a low, a high, and a one-word outlook — because a rule that
+depends on a forecast being right to the degree is a rule that will be wrong.
+"""
+params.forecast_low_c = { type = "f32", optional = true }
+params.forecast_high_c = { type = "f32", optional = true }
+params.forecast_condition = { type = "string", optional = true, values = [
+  "clear", "cloudy", "overcast", "fog", "rain", "snow", "sleet", "hail", "storm",
+] }
+params.forecast_rain_chance = { type = "u8", min = 0, max = 100, optional = true }
+
+[notifications.rain_changed]
+title = "Rain changed"
+requires = "has_rain"
+params.raining = { type = "bool" }
+params.rain_mm_hour = { type = "f32", optional = true }
+
+[notifications.wind_changed]
+title = "Wind changed"
+requires = "has_wind"
+params.wind_kph = { type = "f32" }
+
+[notifications.uv_changed]
+title = "UV changed"
+requires = "has_uv"
+params.uv_index = { type = "f32", min = 0.0, max = 20.0 }
+
+[notifications.air_quality_changed]
+title = "Air quality changed"
+requires = "has_air_quality"
+params.aqi = { type = "u32", doc = "Whatever index the source publishes; compare against itself" }
+
+[notifications.online_changed]
+title = "Reachability changed"
+params.online = { type = "bool" }
+
+[state]
+temperature_c = { title = "Temperature", type = "f32" }
+humidity = { title = "Humidity", type = "f32" }
+condition = { title = "Conditions", type = "string" }
+# Maintained by core from `condition`, so a rule can say "when it starts raining" without
+# enumerating rain, sleet, hail and storm — and so the UI, a rule and the miner cannot each arrive
+# at a different idea of what wet means.
+raining = { title = "Raining", type = "bool", one_of = { key = "condition", values = ["rain", "sleet", "hail", "storm"] } }
+rain_mm_hour = { title = "Rainfall", type = "f32" }
+wind_kph = { title = "Wind", type = "f32" }
+uv_index = { title = "UV index", type = "f32" }
+aqi = { title = "Air quality", type = "u32" }
+forecast_low_c = { title = "Forecast low", type = "f32" }
+forecast_high_c = { title = "Forecast high", type = "f32" }
+forecast_condition = { title = "Forecast", type = "string" }
+forecast_rain_chance = { title = "Chance of rain", type = "u8" }
+online = { title = "Reachable", type = "bool" }

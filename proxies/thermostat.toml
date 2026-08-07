@@ -1,0 +1,88 @@
+name = "thermostat"
+version = 1
+title = "Thermostat"
+category = "environment"
+
+[capabilities]
+has_heat            = { type = "bool", default = true }
+has_cool            = { type = "bool", default = true }
+has_auto            = { type = "bool", default = false, doc = "Dual setpoint auto-changeover" }
+has_fan_control     = { type = "bool", default = true }
+fan_modes           = { type = "string_list", default = ["auto", "on"] }
+has_humidity        = { type = "bool", default = false }
+has_humidity_control = { type = "bool", default = false }
+setpoint_min_c      = { type = "f32",  default = 4.0 }
+setpoint_max_c      = { type = "f32",  default = 35.0 }
+setpoint_step_c     = { type = "f32",  default = 0.5 }
+has_hold            = { type = "bool", default = false, doc = "Can override a schedule until cancelled" }
+stage_count         = { type = "u8",   default = 1 }
+
+[commands.set_mode]
+title = "Set mode"
+params.mode = { type = "string", values = ["off", "heat", "cool", "auto"] }
+
+[commands.set_heat_setpoint]
+title = "Set heating target"
+requires = "has_heat"
+# Bounded by what this thermostat will actually hold, so the assistant is shown a range
+# rather than discovering it by being refused — and so "set it to 200" is caught here.
+params.celsius = { type = "f32", min_cap = "setpoint_min_c", max_cap = "setpoint_max_c" }
+
+[commands.set_cool_setpoint]
+title = "Set cooling target"
+requires = "has_cool"
+params.celsius = { type = "f32", min_cap = "setpoint_min_c", max_cap = "setpoint_max_c" }
+
+[commands.set_fan_mode]
+title = "Set fan"
+requires = "has_fan_control"
+params.mode = { type = "string" }
+
+[commands.set_hold]
+title = "Hold or resume schedule"
+requires = "has_hold"
+params.hold = { type = "bool" }
+
+[notifications.temperature_changed]
+title = "Temperature changed"
+params.celsius = { type = "f32" }
+
+[notifications.humidity_changed]
+title = "Humidity changed"
+requires = "has_humidity"
+params.percent = { type = "f32", min = 0.0, max = 100.0 }
+
+[notifications.mode_changed]
+title = "Mode changed"
+params.mode = { type = "string" }
+
+[notifications.setpoint_changed]
+title = "Target changed"
+params.which   = { type = "string", values = ["heat", "cool"] }
+params.celsius = { type = "f32" }
+
+[notifications.hvac_state_changed]
+title = "Heating or cooling changed"
+doc = "What the equipment is actually doing right now"
+params.state = { type = "string", values = ["idle", "heating", "cooling", "fan"] }
+
+[notifications.online_changed]
+title = "Reachability changed"
+params.online = { type = "bool" }
+
+[state]
+temperature_c  = { title = "Temperature", type = "f32", from = "celsius" }
+humidity       = { title = "Humidity", type = "f32", from = "percent" }
+mode           = { title = "Mode", type = "string" }
+heat_setpoint_c = { title = "Heating target", type = "f32" }
+cool_setpoint_c = { title = "Cooling target", type = "f32" }
+# The one setpoint that is actually in force. In heat or cool a thermostat is holding a single
+# number, and showing a heat *and* a cool setpoint invents a second one nobody set. In auto it
+# really is holding a band, and this is left unset so the pair above is what gets read.
+setpoint_c     = { type = "f32" }
+hvac_state     = { title = "Heating or cooling", type = "string", from = "state" }
+online         = { title = "Reachable", type = "bool" }
+# What the thermostat itself displays, `°C` or `°F`. Everything on the wire stays Celsius —
+# that is the contract, and a unit conversion belongs at the edge — but a thermostat set to
+# Fahrenheit should be read back in Fahrenheit, or the house disagrees with the wall.
+display_unit   = { type = "string" }

@@ -1,0 +1,57 @@
+name = "blind"
+version = 1
+title = "Blind"
+category = "environment"
+description = """
+A window covering: shade, blind, drape, or shutter. The common relay-driven case declares
+`supports_position = false` and two `relay` control connections; a motor with a position
+encoder declares `supports_position = true`.
+"""
+
+[capabilities]
+supports_position = { type = "bool", default = false, doc = "Can be commanded to an intermediate position" }
+supports_tilt     = { type = "bool", default = false, doc = "Slats tilt independently of position" }
+supports_stop     = { type = "bool", default = true }
+travel_time_ms    = { type = "u32",  default = 0, doc = "Full open→closed time; lets core estimate position without an encoder" }
+invert_position   = { type = "bool", default = false, doc = "Device reports 0 as fully closed rather than fully open" }
+
+[commands.open]
+title = "Open"
+[commands.close]
+title = "Close"
+
+[commands.stop]
+title = "Stop"
+requires = "supports_stop"
+
+[commands.set_position]
+title = "Set position"
+doc = "0 = fully closed, 100 = fully open"
+requires = "supports_position"
+params.position = { type = "u8", min = 0, max = 100 }
+
+[commands.set_tilt]
+title = "Set tilt"
+requires = "supports_tilt"
+params.tilt = { type = "u8", min = 0, max = 100 }
+
+[notifications.position_changed]
+title = "Position changed"
+params.position = { type = "u8", min = 0, max = 100 }
+
+[notifications.moving_changed]
+params.moving = { type = "string", values = ["opening", "closing", "stopped"] }
+
+[notifications.tilt_changed]
+title = "Tilt changed"
+requires = "supports_tilt"
+params.tilt = { type = "u8" }
+
+[notifications.online_changed]
+params.online = { type = "bool" }
+
+[state]
+position = { title = "Position", type = "u8" }
+tilt     = { title = "Tilt", type = "u8" }
+moving   = { type = "string" }
+online   = { type = "bool" }

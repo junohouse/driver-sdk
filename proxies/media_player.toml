@@ -1,0 +1,114 @@
+name = "media_player"
+version = 1
+title = "Media Player"
+category = "av"
+description = """
+Anything that originates content: a streamer, a disc player, a cable box, a music service.
+It is a *source* in the signal graph — a room's `watch` or `listen` names one of these.
+"""
+
+[capabilities]
+has_transport      = { type = "bool", default = true,  doc = "Play/pause/stop" }
+has_skip           = { type = "bool", default = false }
+has_seek           = { type = "bool", default = false }
+has_scan           = { type = "bool", default = false, doc = "Fast forward / rewind" }
+has_metadata       = { type = "bool", default = false, doc = "Reports title/artist/art" }
+has_browse         = { type = "bool", default = false, doc = "Content can be listed and selected by id" }
+has_search         = { type = "bool", default = false }
+has_playlists      = { type = "bool", default = false }
+has_shuffle_repeat = { type = "bool", default = false }
+has_dpad           = { type = "bool", default = false, doc = "Cursor navigation for an on-screen UI" }
+has_apps           = { type = "bool", default = false, doc = "Installed applications can be listed and launched" }
+has_number_keys    = { type = "bool", default = false }
+is_video_source    = { type = "bool", default = false }
+is_audio_source    = { type = "bool", default = true }
+
+[commands.play]
+[commands.pause]
+[commands.stop]
+
+[commands.skip_forward]
+requires = "has_skip"
+[commands.skip_back]
+requires = "has_skip"
+
+[commands.seek]
+requires = "has_seek"
+params.position_ms = { type = "u32" }
+
+[commands.scan_forward]
+requires = "has_scan"
+[commands.scan_reverse]
+requires = "has_scan"
+
+[commands.set_shuffle]
+requires = "has_shuffle_repeat"
+params.shuffle = { type = "bool" }
+
+[commands.set_repeat]
+requires = "has_shuffle_repeat"
+params.mode = { type = "string", values = ["off", "one", "all"] }
+
+[commands.play_item]
+doc = "Play a content id previously returned by browse or search"
+requires = "has_browse"
+params.id = { type = "string" }
+
+[commands.search]
+requires = "has_search"
+params.query = { type = "string" }
+
+[commands.dpad]
+requires = "has_dpad"
+params.key = { type = "string", values = ["up", "down", "left", "right", "select", "back", "menu", "home", "info"] }
+
+[notifications.transport_changed]
+params.state = { type = "string", values = ["playing", "paused", "stopped", "buffering"] }
+
+[notifications.metadata_changed]
+requires = "has_metadata"
+params.title    = { type = "string", optional = true }
+params.artist   = { type = "string", optional = true }
+params.album    = { type = "string", optional = true }
+params.art_url  = { type = "string", optional = true }
+params.duration_ms = { type = "u32", optional = true }
+
+[notifications.position_changed]
+requires = "has_seek"
+params.position_ms = { type = "u32" }
+
+[notifications.online_changed]
+params.online = { type = "bool" }
+
+[state]
+transport = { type = "string", from = "state" }
+app       = { type = "string", doc = "Application currently in the foreground" }
+apps      = { type = "string_list", doc = "Installed applications, as read from the device" }
+app_icons = { type = "string_list", doc = "Artwork for `apps`, one per entry, same order" }
+title     = { type = "string" }
+artist    = { type = "string" }
+online    = { type = "bool" }
+
+[commands.launch_app]
+doc = "Open an installed application. The valid names are whatever `apps` reports for this device."
+requires = "has_apps"
+params.app = { type = "string", values_from = "apps" }
+params.content_id = { type = "string", optional = true, doc = "Deep link to a specific title" }
+
+[notifications.app_changed]
+requires = "has_apps"
+params.app = { type = "string" }
+
+[notifications.apps_changed]
+doc = "The installed application list, read from the device."
+requires = "has_apps"
+params.apps = { type = "string_list" }
+params.app_icons = { type = "string_list", optional = true, doc = """
+One artwork URL per entry in `apps`, same order, empty string where the device has none. A
+control surface draws the channel the way its owner recognises it — by its logo, not its name.
+
+These are addresses on the device, and they stay there: a client asks the controller for
+`/artwork?binding=..&i=..` and the controller fetches the picture. That is what makes this
+work from a phone that is not on the television's network, and it means a driver only has to
+say where its artwork lives, not serve it.
+""" }

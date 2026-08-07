@@ -1,0 +1,93 @@
+name = "room"
+version = 1
+title = "Room"
+category = "system"
+description = """
+Not a device — the unit of user intent, and the primary handle for both keypads and the AI.
+
+A room owns its bindings, its sinks (which consumer connection is the display, which is the
+audio endpoint), its scenes, and its authored context. Room commands resolve through the
+pathfinder into device commands; nobody programs a button sequence by hand.
+
+Rooms are created by the project, not by a driver. This proxy exists so that rooms are
+addressable through exactly the same contract as everything else.
+"""
+
+[capabilities]
+has_video     = { type = "bool", default = false, doc = "A display sink is bound" }
+has_audio     = { type = "bool", default = false, doc = "An audio sink is bound" }
+has_lighting  = { type = "bool", default = false }
+has_climate   = { type = "bool", default = false }
+has_shades    = { type = "bool", default = false }
+volume_owner  = { type = "u32",  default = 0, doc = "Binding whose volume is the room's volume. Resolved by the pathfinder." }
+
+[commands.watch]
+title = "Watch something"
+doc = "Select a video source and solve the path to this room's display"
+requires = "has_video"
+params.source = { type = "u32", doc = "Binding id of a media_player or other video source" }
+
+[commands.listen]
+title = "Listen to something"
+doc = "Select an audio source and solve the path to this room's audio endpoint"
+requires = "has_audio"
+params.source = { type = "u32" }
+
+[commands.off]
+title = "Turn the room off"
+doc = "Tear the room down: release its path and power off devices no other room is using"
+
+[commands.set_volume]
+title = "Set volume"
+params.level = { type = "u8", min = 0, max = 100 }
+
+[commands.volume_up]
+title = "Volume up"
+[commands.volume_down]
+title = "Volume down"
+
+[commands.set_mute]
+title = "Mute or unmute"
+params.mute = { type = "bool" }
+
+[commands.activate_scene]
+title = "Activate a scene"
+params.name = { type = "string" }
+
+[commands.all_lights_off]
+title = "All lights off"
+requires = "has_lighting"
+
+[notifications.source_changed]
+title = "Source changed"
+params.kind   = { type = "string", values = ["video", "audio"] }
+params.source = { type = "u32" }
+
+[notifications.volume_changed]
+title = "Volume changed"
+params.level = { type = "u8" }
+
+[notifications.mute_changed]
+title = "Mute changed"
+params.mute = { type = "bool" }
+
+[notifications.power_changed]
+title = "Room turned on or off"
+params.on = { type = "bool" }
+
+[notifications.scene_activated]
+title = "Scene activated"
+params.name = { type = "string" }
+
+[notifications.button_action]
+title = "Button pressed"
+doc = "A keypad or remote press arriving at the room level, before it is routed to a device"
+params.button = { type = "string" }
+params.action = { type = "string", values = ["press", "release", "click", "double", "hold"] }
+
+[state]
+on           = { title = "On", type = "bool" }
+video_source = { title = "Video source", type = "u32" }
+audio_source = { title = "Audio source", type = "u32" }
+volume       = { title = "Volume", type = "u8", from = "level" }
+mute         = { title = "Muted", type = "bool" }

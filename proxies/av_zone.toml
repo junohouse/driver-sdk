@@ -1,0 +1,104 @@
+name = "av_zone"
+version = 1
+title = "AV zone"
+category = "system"
+description = """
+One room's audio and video, routed by a system that is not Juno.
+
+The awkward case this exists for: a house already commissioned on Control4 or Savant, where
+every HDMI run, every matrix output and every warmup delay was entered once, years ago, by
+whoever installed it. Juno can drive that house — but re-drawing its signal graph to do so is
+days of work to arrive back where it started, and it would force Juno to learn the one thing
+worth not knowing: which input the TV is on.
+
+So a room may hand its AV to a binding of this proxy instead. `watch` and `listen` on such a
+room do not run the pathfinder; they are forwarded here, and the far system does what it
+already knows how to do. Everything else about the room stays Juno's — its lights are ordinary
+`light` bindings, its sensors ordinary `sensor` bindings, and its automations do not care.
+
+**This is not a `receiver`.** A receiver is a box with inputs, and modelling a room as one
+means inventing signal connections that do not exist, so that a pathfinder that must not run
+has something to chew on. This says what is true instead: the room's AV belongs to somebody
+else, and here is the handle.
+
+Infrastructure rather than a device, which is why it sits under `system` beside `room` and
+`bridge`: nobody buys an AV zone, and nobody points a remote at one. It exists because another
+system does, and what a resident sees is the room in front of it.
+
+A zone names its sources the way the far system names them, not the way Juno does. Core
+translates — a Juno binding in, that system's own id out — so nothing above this contract has
+to learn a foreign vocabulary, and a source the far system has never heard of is refused
+rather than sent into the dark.
+"""
+
+[capabilities]
+has_video = { type = "bool", default = true }
+has_audio = { type = "bool", default = true }
+has_discrete_volume = { type = "bool", default = false, doc = "Can be set to an absolute volume" }
+has_discrete_mute = { type = "bool", default = false }
+volume_max = { type = "u32", default = 100 }
+
+[commands.select_source]
+title = "Select a source"
+doc = """
+Play something in this zone. `source` is the far system's own id, which core fills in from the
+binding somebody actually asked for.
+"""
+params.source = { type = "string" }
+params.signal = { type = "string", values = ["video", "audio"] }
+
+[commands.off]
+title = "Turn the zone off"
+doc = "Stop whatever is playing and release the room, as that system understands it."
+
+[commands.set_volume]
+title = "Set volume"
+requires = "has_discrete_volume"
+params.level = { type = "u32", min = 0, max = 100 }
+
+[commands.volume_up]
+title = "Volume up"
+[commands.volume_down]
+title = "Volume down"
+
+[commands.set_mute]
+title = "Mute or unmute"
+requires = "has_discrete_mute"
+params.mute = { type = "bool" }
+
+[commands.mute_toggle]
+title = "Toggle mute"
+
+[notifications.source_changed]
+title = "Source changed"
+doc = "Somebody picked a source over there — on a handheld remote, on a keypad, in an app."
+params.signal = { type = "string", values = ["video", "audio"] }
+# Empty means the zone stopped carrying that signal.
+params.source = { type = "string" }
+
+[notifications.volume_changed]
+title = "Volume changed"
+params.level = { type = "u32" }
+
+[notifications.mute_changed]
+title = "Mute changed"
+params.mute = { type = "bool" }
+
+[notifications.power_changed]
+title = "Zone turned on or off"
+params.on = { type = "bool" }
+
+[notifications.online_changed]
+title = "Reachability changed"
+params.online = { type = "bool" }
+
+[state]
+on = { title = "On", type = "bool" }
+# The far system's ids. Core keeps the room's own state in binding ids; these are what the
+# zone last reported, so a source Juno never imported still reads as *something* rather than
+# as nothing playing.
+video_source = { title = "Video source", type = "string" }
+audio_source = { title = "Audio source", type = "string" }
+volume = { title = "Volume", type = "u32", from = "level" }
+mute = { title = "Muted", type = "bool" }
+online = { title = "Reachable", type = "bool" }

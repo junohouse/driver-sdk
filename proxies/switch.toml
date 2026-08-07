@@ -1,0 +1,39 @@
+name = "switch"
+version = 1
+title = "Switch"
+category = "lighting"
+description = """
+A plain on/off load that is not a light — a pump, a fan wall switch, an outlet, a fireplace.
+Use `light` if the user thinks of it as a light; use this if they do not.
+"""
+
+[capabilities]
+supports_power_metering = { type = "bool", default = false }
+has_auto_off            = { type = "bool", default = false, doc = "Device can turn itself off after a timeout" }
+
+[commands.on]
+title = "Turn on"
+[commands.off]
+title = "Turn off"
+[commands.toggle]
+title = "Toggle"
+
+[commands.set_auto_off]
+requires = "has_auto_off"
+params.seconds = { type = "u32", min = 0, max = 86400 }
+
+[notifications.switch_changed]
+params.on = { type = "bool" }
+
+[notifications.power_changed]
+requires = "supports_power_metering"
+params.watts = { type = "f32" }
+
+[notifications.online_changed]
+title = "Reachability changed"
+params.online = { type = "bool" }
+
+[state]
+on     = { title = "On", type = "bool" }
+watts  = { type = "f32" }
+online = { title = "Reachable", type = "bool" }

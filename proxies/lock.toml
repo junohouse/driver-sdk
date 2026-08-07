@@ -1,0 +1,43 @@
+name = "lock"
+version = 1
+title = "Lock"
+category = "security"
+
+[capabilities]
+has_user_codes    = { type = "bool", default = false }
+max_user_codes    = { type = "u32",  default = 0 }
+reports_who       = { type = "bool", default = false, doc = "Reports which user code operated the lock" }
+has_battery       = { type = "bool", default = false }
+supports_auto_lock = { type = "bool", default = false }
+has_jam_detection = { type = "bool", default = false }
+
+[commands.lock]
+title = "Lock"
+[commands.unlock]
+title = "Unlock"
+
+[commands.set_auto_lock]
+requires = "supports_auto_lock"
+params.seconds = { type = "u32", min = 0, max = 3600 }
+
+[notifications.lock_changed]
+title = "Locked or unlocked"
+params.locked = { type = "bool" }
+params.source = { type = "string", optional = true, values = ["manual", "remote", "code", "auto", "unknown"] }
+params.user   = { type = "string", optional = true }
+
+[notifications.jammed]
+requires = "has_jam_detection"
+
+[notifications.battery_changed]
+title = "Battery changed"
+requires = "has_battery"
+params.percent = { type = "u8", min = 0, max = 100 }
+
+[notifications.online_changed]
+params.online = { type = "bool" }
+
+[state]
+locked  = { title = "Locked", type = "bool" }
+battery = { title = "Battery", type = "u8", from = "percent" }
+online  = { type = "bool" }

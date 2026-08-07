@@ -1,0 +1,39 @@
+name = "serial_port"
+version = 1
+title = "Serial Port"
+category = "connection"
+description = """
+One RS-232/422/485 port. Devices with several ports expose one binding each.
+
+The consuming driver writes bytes and receives bytes; it does not know whether the port is a
+DB9 on the controller, an iTach IP2SL across the LAN, or a USB dongle. The consumer supplies
+the line settings it needs via `configure` at bind time.
+"""
+
+[capabilities]
+supported_bauds  = { type = "string_list", default = ["9600", "19200", "38400", "57600", "115200"] }
+has_flow_control = { type = "bool", default = false }
+supports_485     = { type = "bool", default = false, doc = "Half-duplex RS-485 with direction control" }
+max_write_bytes  = { type = "u32",  default = 4096 }
+
+[commands.configure]
+doc = "Set line parameters. Called by the consuming driver on bind."
+params.baud     = { type = "u32" }
+params.databits = { type = "u8",     optional = true, min = 5, max = 8 }
+params.parity   = { type = "string", optional = true, values = ["none", "even", "odd", "mark", "space"] }
+params.stopbits = { type = "u8",     optional = true, min = 1, max = 2 }
+params.flow     = { type = "string", optional = true, values = ["none", "rtscts", "xonxoff"] }
+
+[commands.write]
+params.data = { type = "bytes" }
+
+[notifications.rx]
+doc = "Bytes received. Framing is the consuming driver's problem — this is a byte pipe."
+params.data = { type = "bytes" }
+
+[notifications.online_changed]
+params.online = { type = "bool" }
+
+[state]
+online = { type = "bool" }
+baud   = { type = "u32" }

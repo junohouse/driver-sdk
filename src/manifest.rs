@@ -1,0 +1,620 @@
+//! `manifest.toml` — what a driver package declares about itself.
+//!
+//! The manifest is checked against the proxy registry before a driver is ever installed, so a
+//! typo'd capability or a connection pointing at a proxy that does not exist fails at install
+//! time with a list, not at 9pm in someone's living room.
+
+use crate::proxy::{ProxyRegistry, Resolved};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
+
+/// Ids are driver-local and chosen by the driver author. They must be stable across versions:
+/// a project remembers what it was bound to by this number.
+pub use crate::LocalId;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Runtime {
+    Declarative,
+    Python,
+    Wasm,
+    /// A compiled library the controller dlopens: `.dylib`, `.so`, `.dll`.
+    ///
+    /// Distinct from [`Runtime::Wasm`] because it is not sandboxed. A native plugin runs
+    /// in-process with the controller's privileges, which is acceptable for drivers built by
+    /// our own CI and is exactly why the registry marks anything else third-party. Calling
+    /// these "wasm" — as every first-party manifest used to — meant the catalog advertised a
+    /// sandbox that was not there.
+    Native,
+    /// A driver core registers itself, with no package behind it at all.
+    ///
+    /// The virtual devices `run --demo` builds are Rust structs handed straight to the runtime;
+    /// there is no archive, no payload and nothing to load. They still need a manifest, because
+    /// a device is bound through its declared proxies like any other — so they need a word for
+    /// "there is no file", and `native` is not it. `native` means a dylib the package carries,
+    /// which is what real drivers ship, and one runtime name meaning two things is a fault
+    /// discovered at install time by somebody who did not write either.
+    ///
+    /// A package can never carry one. See [`crate::driver::package`].
+    Builtin,
+    /// A protocol stack in its own process, spoken to over a pipe. See
+    /// [`crate::driver::adapter`], and [`AdapterDecl`] for the activation rule.
+    ///
+    /// The odd one out, because there is no in-process code at all: nothing is `dlopen`ed and
+    /// nothing is interpreted here. The package *is* the tree the child process runs, which is
+    /// why [`crate::driver::package`] asks it for no payload — and why a manifest saying
+    /// `adapter` without an `[adapter]` table describes nothing that can start.
+    Adapter,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ControlKind {
+    Relay,
+    Contact,
+    IrOut,
+    Serial,
+}
+
+impl ControlKind {
+    /// The proxy a provider must implement to satisfy this kind of control connection.
+    /// This mapping is the hinge of the whole abstraction: a driver asks for `relay` and gets
+    /// bound to *any* binding of the `relay` proxy, whatever hardware is underneath.
+    pub fn provider_proxy(self) -> &'static str {
+        match self {
+            ControlKind::Relay => "relay",
+            ControlKind::Contact => "contact",
+            ControlKind::IrOut => "ir_out",
+            ControlKind::Serial => "serial_port",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Direction {
+    Consumer,
+    Provider,
+}
+
+fn default_true() -> bool {
+    true
+}
+fn default_api() -> u32 {
+    1
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DriverMeta {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub manufacturer: String,
+    pub version: String,
+    pub runtime: Runtime,
+    #[serde(default = "default_api")]
+    pub api: u32,
+    pub min_core: Option<String>,
+    /// Marks the driver a multi-driver package leads with — the one that names the artifact
+    /// and that the installer reports.
+    ///
+    /// Only needed when a package's drivers are siblings, like a Roku TV and a Roku player:
+    /// where one is another's `parent` the bridge leads on its own, and where there is a lone
+    /// `manifest.toml` it leads by definition. Left unset everywhere, the choice would fall to
+    /// alphabetical order, which is stable but says nothing.
+    #[serde(default)]
+    pub primary: bool,
+    /// Driver id of the bridge these devices live behind, if they do.
+    ///
+    /// A child inherits its parent's properties, so a Hue bulb does not carry its own copy of
+    /// the bridge address — it reads the one the bridge holds. That is the whole point: a
+    /// bridge that moves to a new IP is edited once.
+    pub parent: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProxyDecl {
+    pub id: LocalId,
+    #[serde(rename = "type")]
+    pub ty: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub primary: bool,
+    #[serde(default)]
+    pub capabilities: BTreeMap<String, Value>,
+}
+
+/// Something a driver can do that no proxy contract describes.
+///
+/// A proxy command is a promise about a *class* of device: every `light` answers `set_level`,
+/// so an automation, the assistant and the UI can all speak to one without knowing what it is.
+/// That is the whole value of the layer and it is why a driver cannot add to it.
+///
+/// But a Zigbee coordinator has to be told to open its network for sixty seconds, and a Z-Wave
+/// controller has to be told to heal its mesh. Those are not commands on a *bridge* — they are
+/// commands on *this* bridge, and inventing `bridge.permit_join` would put a Zigbee concept in
+/// a contract that a Hue bridge and a Caséta bridge also have to satisfy.
+///
+/// So actions are the escape hatch, deliberately shaped so it cannot be mistaken for the other
+/// thing: they are addressed by driver and device rather than by binding, they never appear in
+/// a proxy contract, an automation cannot bind to one, and they are validated against *this
+/// manifest* rather than against a shared contract. Somebody reading a project can always tell
+/// which of the two they are looking at.
+/// A driver that runs in its own process. See [`crate::driver::adapter`].
+///
+/// Its presence is the entire activation rule: core spawns this process when — and only when —
+/// a device in the project uses a driver that declares one. There is no services page and
+/// nothing to remember to turn off, because a settings screen that can disagree with reality
+/// eventually will.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdapterDecl {
+    /// `node`, or a binary shipped in the package.
+    pub exec: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ActionDecl {
+    /// `permit_join`. Unique within the driver.
+    pub name: String,
+    /// What the button says. The driver's language, not ours.
+    pub label: String,
+    #[serde(default)]
+    pub description: String,
+    /// Arguments, in the order a form should show them.
+    #[serde(default)]
+    pub arg: Vec<ArgDecl>,
+    /// Ask before running it. For anything that removes a device, rewrites a network key, or
+    /// takes the mesh down for a minute.
+    #[serde(default)]
+    pub confirm: bool,
+    /// Free the network for joining, erase a controller — the things worth a red button and a
+    /// sentence explaining what is about to happen.
+    #[serde(default)]
+    pub danger: bool,
+}
+
+/// One argument of an [`ActionDecl`].
+///
+/// Deliberately the same small vocabulary as `[[property]]`, so a driver author learns one
+/// thing and a form renderer has one thing to render.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArgDecl {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub required: bool,
+    pub default: Option<Value>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    /// A closed set, rendered as a menu.
+    #[serde(default)]
+    pub values: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ControlDecl {
+    pub id: LocalId,
+    pub kind: ControlKind,
+    pub name: String,
+    #[serde(default = "default_true")]
+    pub required: bool,
+    pub proxy: Option<LocalId>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectionDecl {
+    pub id: LocalId,
+    pub proxy: LocalId,
+    pub dir: Direction,
+    pub class: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TransportDecl {
+    pub kind: String,
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub discovery: String,
+    #[serde(default)]
+    pub keepalive: bool,
+    /// Wrap the connection in mutual TLS — a client certificate property must be set on the
+    /// device (or inherited from its bridge) or the connection is refused.
+    #[serde(default)]
+    pub tls: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PropertyDecl {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+    #[serde(default)]
+    pub tooltip: String,
+    pub default: Option<Value>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    #[serde(default)]
+    pub values: Vec<String>,
+    #[serde(default)]
+    pub unit: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Discovery {
+    #[serde(default)]
+    pub mdns: Vec<String>,
+    #[serde(default)]
+    pub ssdp: Vec<String>,
+    /// SDDP is matched across several fields at once, so an entry is either a bare type
+    /// string or a table — see [`crate::driver::catalog::SddpMatch`].
+    #[serde(default)]
+    pub sddp: Vec<crate::sddp::SddpMatch>,
+    #[serde(default)]
+    pub mac_oui: Vec<String>,
+    #[serde(default)]
+    pub http: Vec<BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Manifest {
+    pub driver: DriverMeta,
+    #[serde(default)]
+    pub proxy: Vec<ProxyDecl>,
+    #[serde(default)]
+    pub control: Vec<ControlDecl>,
+    #[serde(default)]
+    pub connection: Vec<ConnectionDecl>,
+    #[serde(default)]
+    pub transport: Vec<TransportDecl>,
+    #[serde(default)]
+    pub property: Vec<PropertyDecl>,
+    #[serde(default)]
+    pub discovery: Discovery,
+    /// Driver-specific actions. See [`ActionDecl`] for why these are not proxy commands.
+    #[serde(default)]
+    pub action: Vec<ActionDecl>,
+    /// Present if this driver is a separate process. See [`AdapterDecl`].
+    #[serde(default)]
+    pub adapter: Option<AdapterDecl>,
+}
+
+/// Reject a driver id that could escape the directory it names.
+///
+/// Lowercase alphanumerics, dots and underscores. Not a style rule — the registry index schema
+/// handles house style for anything certified, and a sideloaded `.junodrv` never goes through
+/// CI. This is only about what can safely become a path.
+fn validate_driver_id(id: &str) -> Result<(), &'static str> {
+    if id.is_empty() {
+        return Err("it is empty");
+    }
+    if id.len() > 128 {
+        return Err("it is longer than 128 characters");
+    }
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_')
+    {
+        return Err("only lowercase letters, digits, `.` and `_` are allowed");
+    }
+    // `..` is the traversal, and a leading or trailing dot is how it gets smuggled past a
+    // check that only looks for the pair.
+    if id.contains("..") || id.starts_with('.') || id.ends_with('.') {
+        return Err("it may not contain `..` or begin or end with a dot");
+    }
+    // Deliberately NOT requiring two segments. Reverse-DNS is the convention and the registry
+    // index schema enforces it for anything certified, but a single-segment id cannot traverse
+    // anywhere, and this function's job is the filesystem, not house style.
+    Ok(())
+}
+
+impl Manifest {
+    pub fn parse(src: &str) -> Result<Self, toml::de::Error> {
+        let m: Manifest = toml::from_str(src)?;
+        // A driver id reaches the filesystem: it names the unpacked plugin directory and the
+        // archive an upload is written to. `Path::join` with an absolute string *replaces* the
+        // base rather than appending to it, so an id of `/etc/cron.d/x` escapes the drivers
+        // directory entirely — and `../` gets there the slower way. Validated here, at the one
+        // place every manifest is parsed, rather than at each place an id becomes a path,
+        // because the next such place will forget.
+        if let Err(why) = validate_driver_id(&m.driver.id) {
+            return Err(serde::de::Error::custom(format!(
+                "driver.id `{}` is not usable: {why}",
+                m.driver.id
+            )));
+        }
+        Ok(m)
+    }
+
+    /// Whether this driver's devices must be attached to a bridge.
+    pub fn needs_parent(&self) -> Option<&str> {
+        self.driver.parent.as_deref()
+    }
+
+    /// The proxy the driver leads with — explicit `primary`, else the first declared.
+    pub fn primary_proxy(&self) -> Option<LocalId> {
+        self.proxy
+            .iter()
+            .find(|p| p.primary)
+            .or_else(|| self.proxy.first())
+            .map(|p| p.id)
+    }
+
+    pub fn control(&self, id: LocalId) -> Option<&ControlDecl> {
+        self.control.iter().find(|c| c.id == id)
+    }
+
+    /// Every problem at once — a driver author wants the whole list, not the first line.
+    /// The action with this name, if the driver declared one.
+    pub fn action(&self, name: &str) -> Option<&ActionDecl> {
+        self.action.iter().find(|a| a.name == name)
+    }
+
+    pub fn validate(&self, registry: &ProxyRegistry) -> Vec<String> {
+        let mut errs = Vec::new();
+
+        // An adapter and its `[adapter]` table imply each other, and each without the other
+        // describes something that cannot start. Refused here — the one place every manifest goes
+        // through — rather than at spawn, where the symptom is a driver that installs and then
+        // never answers.
+        match (self.driver.runtime, self.adapter.is_some()) {
+            // The only two coherent shapes, and they are the first arms so neither falls through
+            // into the complaints below.
+            (Runtime::Adapter, true) => {}
+            (Runtime::Adapter, false) => errs.push(
+                "runtime is `adapter` but there is no [adapter] table saying what to run".into(),
+            ),
+            (other, true) => errs.push(format!(
+                "there is an [adapter] table but runtime is `{other:?}` — \
+                 an adapter's code runs in its own process, so set runtime = \"adapter\""
+            )),
+            _ => {}
+        }
+
+        // Actions are validated against this manifest rather than a shared contract, so this is
+        // the only place a mistake in one can be caught. A driver whose action shadows a proxy
+        // command is the case worth being strict about: the two dispatch differently, and a
+        // person reading "set_level" on a device should never have to work out which they got.
+        let mut action_names = BTreeSet::new();
+        for a in &self.action {
+            if !action_names.insert(a.name.as_str()) {
+                errs.push(format!("duplicate action `{}`", a.name));
+            }
+            if a.name.is_empty() || a.label.is_empty() {
+                errs.push(format!("action `{}` needs a name and a label", a.name));
+            }
+            for p in &self.proxy {
+                if let Some(proxy) = registry.get(&p.ty)
+                    && proxy.commands.contains_key(&a.name)
+                {
+                    errs.push(format!(
+                        "action `{}` has the same name as a command on the `{}` proxy — one of \
+                         them has to change, or nobody can tell which is being invoked",
+                        a.name, p.ty
+                    ));
+                }
+            }
+            let mut arg_names = BTreeSet::new();
+            for arg in &a.arg {
+                if !arg_names.insert(arg.name.as_str()) {
+                    errs.push(format!("action `{}` declares `{}` twice", a.name, arg.name));
+                }
+                if !matches!(arg.ty.as_str(), "string" | "number" | "bool" | "password") {
+                    errs.push(format!(
+                        "action `{}` argument `{}` has unknown type `{}`",
+                        a.name, arg.name, arg.ty
+                    ));
+                }
+            }
+        }
+
+        if self.proxy.is_empty() {
+            errs.push("driver declares no [[proxy]] — it would control nothing".into());
+        }
+
+        let mut seen = BTreeSet::new();
+        for p in &self.proxy {
+            if !seen.insert(p.id) {
+                errs.push(format!("duplicate proxy id {}", p.id));
+            }
+            match registry.get(&p.ty) {
+                None => errs.push(format!("proxy {}: unknown type `{}`", p.id, p.ty)),
+                Some(proxy) => {
+                    if let Err(e) = proxy.resolve(&p.capabilities) {
+                        for msg in e {
+                            errs.push(format!("proxy {}: {msg}", p.id));
+                        }
+                    }
+                }
+            }
+        }
+        if self.proxy.iter().filter(|p| p.primary).count() > 1 {
+            errs.push("more than one proxy marked primary".into());
+        }
+
+        let mut seen = BTreeSet::new();
+        for c in &self.control {
+            if !seen.insert(c.id) {
+                errs.push(format!("duplicate control id {}", c.id));
+            }
+            if registry.get(c.kind.provider_proxy()).is_none() {
+                errs.push(format!(
+                    "control {}: no `{}` proxy in this core",
+                    c.id,
+                    c.kind.provider_proxy()
+                ));
+            }
+            if let Some(p) = c.proxy
+                && !self.proxy.iter().any(|d| d.id == p)
+            {
+                errs.push(format!("control {}: proxy {p} is not declared", c.id));
+            }
+        }
+
+        let mut seen = BTreeSet::new();
+        for c in &self.connection {
+            if !seen.insert(c.id) {
+                errs.push(format!("duplicate connection id {}", c.id));
+            }
+            if !self.proxy.iter().any(|d| d.id == c.proxy) {
+                errs.push(format!(
+                    "connection {}: proxy {} is not declared",
+                    c.id, c.proxy
+                ));
+            }
+        }
+
+        errs
+    }
+
+    /// Resolve every declared proxy against the registry. Call after [`Self::validate`].
+    pub fn resolve_all(
+        &self,
+        registry: &ProxyRegistry,
+    ) -> Result<BTreeMap<LocalId, Resolved>, Vec<String>> {
+        let mut out = BTreeMap::new();
+        let mut errs = Vec::new();
+        for p in &self.proxy {
+            match registry.get(&p.ty) {
+                None => errs.push(format!("unknown proxy type `{}`", p.ty)),
+                Some(proxy) => match proxy.resolve(&p.capabilities) {
+                    Ok(r) => {
+                        out.insert(p.id, r);
+                    }
+                    Err(e) => errs.extend(e),
+                },
+            }
+        }
+        if errs.is_empty() { Ok(out) } else { Err(errs) }
+    }
+}
+
+#[cfg(test)]
+mod id_tests {
+    use super::*;
+
+    fn manifest_with(id: &str) -> Result<Manifest, toml::de::Error> {
+        Manifest::parse(&format!(
+            r#"
+            [driver]
+            id = "{id}"
+            name = "X"
+            version = "1.0.0"
+            runtime = "native"
+            [[proxy]]
+            id = 1
+            type = "light"
+            "#
+        ))
+    }
+
+    /// A driver id names a directory and an uploaded archive. `Path::join` with an absolute
+    /// string discards the base, so this is the difference between writing inside the drivers
+    /// directory and writing anywhere on the disk.
+    #[test]
+    fn an_id_cannot_walk_out_of_the_drivers_directory() {
+        for hostile in [
+            "../../../etc/cron.d/evil",
+            "/etc/cron.d/evil",
+            "roku/../../..",
+            "..",
+            "a..b",
+            ".hidden",
+            "trailing.",
+        ] {
+            assert!(
+                manifest_with(hostile).is_err(),
+                "`{hostile}` was accepted as a driver id"
+            );
+        }
+    }
+
+    #[test]
+    fn ordinary_ids_still_parse() {
+        for good in ["roku.tv", "signify.hue.bridge", "lutron.caseta.leap_dimmer", "a.b"] {
+            assert!(manifest_with(good).is_ok(), "`{good}` was rejected");
+        }
+    }
+
+    /// Uppercase and spaces are not a traversal, but they make an id that is one thing on a
+    /// case-sensitive filesystem and another on a Mac.
+    #[test]
+    fn ids_are_lowercase_and_free_of_whitespace() {
+        assert!(manifest_with("Roku.TV").is_err());
+        assert!(manifest_with("roku tv").is_err());
+        // One segment is unconventional and perfectly safe, so it parses. The registry
+        // schema is where reverse-DNS is insisted upon.
+        assert!(manifest_with("roku").is_ok());
+    }
+}
+
+impl ActionDecl {
+    /// Check arguments before the driver sees them.
+    ///
+    /// The same job `Proxy::validate_call` does for commands, done here because an action has no
+    /// contract to be checked against. Every problem at once rather than the first, because the
+    /// caller is usually a form and a person would rather fix three fields in one go.
+    pub fn validate_args(&self, args: &BTreeMap<String, Value>) -> Result<(), String> {
+        let mut errs = Vec::new();
+
+        for arg in &self.arg {
+            let Some(value) = args.get(&arg.name) else {
+                if arg.required && arg.default.is_none() {
+                    errs.push(format!("`{}` is required", arg.name));
+                }
+                continue;
+            };
+            let ok = match arg.ty.as_str() {
+                "string" | "password" => value.is_string(),
+                "number" => value.is_number(),
+                "bool" => value.is_boolean(),
+                _ => true,
+            };
+            if !ok {
+                errs.push(format!("`{}` should be a {}", arg.name, arg.ty));
+                continue;
+            }
+            if let Some(n) = value.as_f64() {
+                if arg.min.is_some_and(|m| n < m) {
+                    errs.push(format!("`{}` is below the minimum of {}", arg.name, arg.min.unwrap()));
+                }
+                if arg.max.is_some_and(|m| n > m) {
+                    errs.push(format!("`{}` is above the maximum of {}", arg.name, arg.max.unwrap()));
+                }
+            }
+            if !arg.values.is_empty()
+                && value.as_str().is_some_and(|s| !arg.values.iter().any(|v| v == s))
+            {
+                errs.push(format!("`{}` must be one of: {}", arg.name, arg.values.join(", ")));
+            }
+        }
+
+        // An argument nobody declared is a typo in a form or a driver and a caller that failed
+        // silently is how it survives to production.
+        for name in args.keys() {
+            if !self.arg.iter().any(|a| &a.name == name) {
+                errs.push(format!("`{name}` is not an argument of `{}`", self.name));
+            }
+        }
+
+        if errs.is_empty() { Ok(()) } else { Err(errs.join("; ")) }
+    }
+}

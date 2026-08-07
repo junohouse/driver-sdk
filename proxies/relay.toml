@@ -1,0 +1,38 @@
+name = "relay"
+version = 1
+title = "Relay"
+category = "connection"
+description = """
+A single dry-contact relay output. Devices with a bank of relays expose one binding of this
+proxy per relay. Consumed by drivers that declare a `relay` control connection — those
+drivers never learn what hardware is on the other end.
+"""
+
+[capabilities]
+supports_pulse = { type = "bool", default = true, doc = "Can close for a timed interval and release" }
+max_pulse_ms   = { type = "u32",  default = 30000, doc = "Longest pulse the hardware accepts" }
+momentary_only = { type = "bool", default = false, doc = "Hardware cannot hold closed; only pulse is valid" }
+normally_closed = { type = "bool", default = false, doc = "Idle state is closed rather than open" }
+
+[commands.close]
+doc = "Energize — make the contact"
+
+[commands.open]
+doc = "De-energize — break the contact"
+
+[commands.toggle]
+
+[commands.pulse]
+doc = "Close for `ms`, then open. The canonical way to drive a momentary input like a gate or fireplace."
+requires = "supports_pulse"
+params.ms = { type = "u32", min = 1, max = 300000 }
+
+[notifications.relay_changed]
+params.closed = { type = "bool" }
+
+[notifications.online_changed]
+params.online = { type = "bool" }
+
+[state]
+closed = { type = "bool" }
+online = { type = "bool" }

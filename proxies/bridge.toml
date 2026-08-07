@@ -1,0 +1,29 @@
+name = "bridge"
+version = 1
+title = "Bridge"
+category = "system"
+description = """
+A hub that other devices live behind — a Hue bridge, a Lutron processor, a Zigbee coordinator.
+
+It is a device in its own right so that the things every child needs — an address, a paired
+key, a connection — are held in one place. Change the bridge's IP once and every bulb behind
+it follows; without this each bulb would carry its own copy and they would drift the first
+time a router handed out a new lease.
+
+A bridge has no commands. It is not something anyone points a remote at.
+"""
+
+[capabilities]
+child_driver = { type = "string", default = "", doc = "Driver id of the devices that live behind this bridge" }
+max_children = { type = "u32", default = 0, doc = "0 means no stated limit" }
+
+[notifications.online_changed]
+params.online = { type = "bool" }
+
+[notifications.child_count_changed]
+doc = "How many devices the bridge currently reports."
+params.count = { type = "u32" }
+
+[state]
+online = { type = "bool" }
+count  = { type = "u32" }
