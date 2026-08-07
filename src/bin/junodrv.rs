@@ -8,13 +8,14 @@
 //!     junodrv pack <dir> [--out <dir>]   build a .junodrv, refusing one that would not install
 //!     junodrv check <dir>                validate only
 //!     junodrv entry <pkg.junodrv> …      emit the registry index rows for a built package
+//!     junodrv docs [--out <dir>]         render the contracts as the published proxy reference
 //!
-//! Deliberately not `clap`. Two subcommands and one flag do not justify a dependency on a
-//! crate this size, and every driver author would pay for it in build time.
+//! Deliberately not `clap`. A handful of subcommands and one flag do not justify a dependency
+//! on a crate this size, and every driver author would pay for it in build time.
 
 use driver_sdk::catalog::{DiscoveryHints, Entry, Release};
 use driver_sdk::package::Package;
-use driver_sdk::proxy::ProxyRegistry;
+use driver_sdk::proxy::{ProxyRegistry, docgen};
 use std::path::{Path, PathBuf};
 
 fn main() {
@@ -30,37 +31,45 @@ usage:
   junodrv check <dir>                validate only
   junodrv entry <pkg.junodrv> --repo R --url U --sha256 S [--version V] [--description D]
                                      emit the registry index rows for a built package
+  junodrv docs [--out <dir>]         render the proxy reference as markdown
 
   <dir> holds manifest.toml, or manifests/*.toml for a package with several drivers.
-  --out defaults to ./dist";
+  --out defaults to ./dist, or ../docs/content/proxies for `docs`";
 
 fn run() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(cmd) = args.first().map(String::as_str) else {
         anyhow::bail!("{USAGE}");
     };
-    let Some(dir) = args.get(1).map(PathBuf::from) else {
-        anyhow::bail!("{USAGE}");
+    let flag = |name: &str| {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
     };
-    let out = args
-        .iter()
-        .position(|a| a == "--out")
-        .and_then(|i| args.get(i + 1))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("dist"));
+    // Every command but `docs` is named after something on disk; `docs` renders what is
+    // compiled in and has nothing to point at.
+    let dir = || {
+        args.get(1)
+            .filter(|a| !a.starts_with("--"))
+            .map(PathBuf::from)
+            .ok_or_else(|| anyhow::anyhow!("{USAGE}"))
+    };
+    let out = |default: &str| flag("--out").map_or_else(|| PathBuf::from(default), PathBuf::from);
 
     // The contracts are compiled in, so there is nothing to fetch and nothing to point at.
     let registry = ProxyRegistry::bundled()?;
 
     match cmd {
         "check" => {
-            let manifests = read(&dir, &registry)?;
+            let manifests = read(&dir()?, &registry)?;
             for m in &manifests {
                 println!("{} v{}  ok", m.0, m.1);
             }
             Ok(())
         }
         "pack" => {
+            let (dir, out) = (dir()?, out("dist"));
             // Validate first and separately, so a package that would not install fails here
             // rather than producing an archive somebody then tries to ship.
             let manifests = read(&dir, &registry)?;
@@ -70,16 +79,25 @@ fn run() -> anyhow::Result<()> {
             println!("{} v{} -> {}", lead.0, lead.1, built.display());
             Ok(())
         }
+        // The published reference is generated from the contracts, so it cannot describe a
+        // command a driver would not be allowed to declare. The default output path assumes
+        // the docs repo is checked out beside this one, which is what CI does.
+        "docs" => {
+            let out = out("../docs/content/proxies");
+            std::fs::create_dir_all(&out)?;
+            let files = docgen::all(&registry);
+            for (name, body) in &files {
+                std::fs::write(out.join(name), body)
+                    .map_err(|e| anyhow::anyhow!("writing {name}: {e}"))?;
+            }
+            println!("wrote {} files to {}", files.len(), out.display());
+            Ok(())
+        }
         // Describing an artifact you just built is part of publishing it, so it belongs
         // wherever the packaging does. Opening the archive rather than reading the source tree
         // validates as a side effect: a row can only be emitted for a package that installs.
         "entry" => {
-            let flag = |name: &str| {
-                args.iter()
-                    .position(|a| a == name)
-                    .and_then(|i| args.get(i + 1))
-                    .cloned()
-            };
+            let dir = dir()?;
             let pkg = Package::open(&dir, &registry)?;
             let size = std::fs::metadata(&dir).map(|m| m.len()).unwrap_or(0);
             let version = flag("--version").unwrap_or_else(|| pkg.manifest.driver.version.clone());
