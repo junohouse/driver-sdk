@@ -187,6 +187,7 @@ pub trait DriverModule: Send + Sync {
         (
             SetupStep::Done {
                 devices: Vec::new(),
+                rules: Vec::new(),
             },
             Value::Null,
         )
@@ -340,6 +341,72 @@ pub struct Candidate {
     pub room: String,
 }
 
+/// A rule the driver found already configured on the system it is setting up.
+///
+/// A Hue bridge, a Lutron processor and a Control4 project all arrive with automations on them —
+/// somebody paired that dimmer to those lights, and pairing it is what that *meant*. Throwing that
+/// away and asking the household to describe it again is the same waste as ignoring which room
+/// each bulb is in, and a good deal more annoying, because a rule is harder to describe than a
+/// room.
+///
+/// Everything here is **late-bound**, and it has to be: a rule refers to bindings, and no binding
+/// exists until the installer has adopted something. So a driver points at its own offered
+/// devices, by their position in [`SetupStep::Done`]'s list, and at rooms by name. Core resolves
+/// both after adoption and refuses anything that does not land.
+///
+/// What core does with one is the other half of the bargain: it arrives **disabled**, and tagged
+/// with where it came from. An imported rule is a driver's reading of somebody else's automation,
+/// and the vendor's semantics are never quite these ones — so it is a proposal on the automations
+/// page with its origin written on it, not something that starts running in a house at midnight
+/// because a bridge was adopted.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ImportedRule {
+    /// What to call it. Prefer whatever the far side called it — a name somebody chose beats a
+    /// name generated from what the rule does.
+    pub label: String,
+    /// Which offered device starts it: an index into [`SetupStep::Done`]'s `devices`.
+    #[serde(default)]
+    pub when_device: usize,
+    /// Which of that device's proxies — the `[[proxy]] id` from the manifest. Button 2 of a
+    /// four-button remote is `2`.
+    #[serde(default)]
+    pub when_proxy: LocalId,
+    /// The notification that starts it: `clicked`, `held`. Checked against the contract.
+    #[serde(default)]
+    pub when_event: String,
+    /// A state key instead of an event, for a rule that starts on a sensor rather than a press.
+    /// Mutually exclusive with `when_event`.
+    #[serde(default)]
+    pub when_key: String,
+    /// The value that key must reach. Defaults to `true`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when_becomes: Option<Value>,
+    pub then: Vec<ImportedAction>,
+}
+
+/// One thing an [`ImportedRule`] does.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ImportedAction {
+    /// A command on a room, named rather than numbered. Resolved against the rooms that exist by
+    /// the time the batch has been adopted — including any the candidates themselves created.
+    Room {
+        room: String,
+        command: String,
+        #[serde(default)]
+        args: Args,
+    },
+    /// A command on one of the offered devices, by its position in the same list.
+    Device {
+        device: usize,
+        #[serde(default)]
+        proxy: LocalId,
+        command: String,
+        #[serde(default)]
+        args: Args,
+    },
+}
+
 /// One screen of a driver's setup flow.
 ///
 /// This is what lets a driver ship its own wizard — "press the link button", "here are your
@@ -465,7 +532,13 @@ pub enum SetupStep {
         retry_ms: u32,
     },
     /// Finished. These devices are confirmed and ready to adopt.
-    Done { devices: Vec<Candidate> },
+    Done {
+        devices: Vec<Candidate>,
+        /// Automations the far side already has, offered for import. Created disabled and tagged
+        /// with their origin — see [`ImportedRule`]. Empty for every driver that does not look.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        rules: Vec<ImportedRule>,
+    },
     /// Could not continue, and why.
     Failed { reason: String },
 }
