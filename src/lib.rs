@@ -69,6 +69,19 @@ pub use host::{
 };
 pub use serde_json::{Value, json};
 
+/// Re-exported so a driver needs no serde dependency of its own.
+///
+/// `export_driver!` expands into the driver's crate and has to name a JSON parser there.
+/// Naming `::serde_json` meant every driver declared `serde_json` in its own `Cargo.toml` to
+/// satisfy a macro it never read — and could pin a different one than the ABI types it is
+/// handing across the boundary. Naming it through `$crate` is what makes "the SDK brings the
+/// serde you need" true rather than nearly true.
+///
+/// It buys no space: a driver is a separately linked library, so this copy is its copy either
+/// way. Measured, all of serde is 65 KB of a 473 KB driver — the other 278 KB is Rust's own
+/// std, which no arrangement of dependencies shares between separately linked libraries.
+pub use serde_json;
+
 /// The device-class contracts, and the manifest format that declares against them.
 ///
 /// Behind a feature because of what they cost to compile, not because they are optional to the
@@ -125,7 +138,7 @@ macro_rules! export_driver {
         ) -> *mut u8 {
             let request: $crate::Request = {
                 let bytes = unsafe { ::std::slice::from_raw_parts(ptr, len) };
-                match ::serde_json::from_slice(bytes) {
+                match $crate::serde_json::from_slice(bytes) {
                     Ok(r) => r,
                     Err(e) => {
                         return $crate::__respond(

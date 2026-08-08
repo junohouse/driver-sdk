@@ -18,7 +18,7 @@ and nothing else.
 
 ```toml
 [dependencies]
-driver-sdk = { git = "https://github.com/junohouse/driver-sdk", tag = "v0.6.0" }
+driver-sdk = { git = "https://github.com/junohouse/driver-sdk", tag = "v0.7.0" }
 
 # A driver is downloaded and kept per project, and it spends its time waiting on a device
 # rather than in its own code — so build it for size. Worth 30-35% on every certified driver
