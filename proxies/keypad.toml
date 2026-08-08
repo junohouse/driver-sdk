@@ -1,31 +1,36 @@
-name = "button"
+name = "keypad"
 version = 1
-title = "Button"
+title = "Keypad"
 category = "lighting"
 description = """
-One button on a keypad, a remote or a wall control. Not a load — a button drives nothing by itself,
-it only says it was pressed, and what happens next is a rule.
+A keypad, a remote or a dial — one device, however many keys are on it. A Pico, a Hue Dimmer and
+a wall module behind a rocker are all this. Not a load: a keypad drives nothing by itself, it only
+says a key was touched, and what happens next is a rule.
 
-One binding per physical button, the same rule the `sensor` contract uses for a multi-sensor: a Hue
-Dimmer becomes four bindings named On, Up, Down and Off rather than one binding with a button
-number, so an automation can trigger on exactly one thing. The alternative — a single
-`button_action { button, action }` — reads tidier and cannot be used, because a trigger matches a
-notification by name and would fire on every button of the device.
+One binding for the whole device, not one per key. A Pico on the wall is one object somebody
+picks up, and splitting it into four would make it four tiles, four things that go offline
+separately, and four rows in a list where a person is looking for the remote they are holding.
 
-Each action is its own notification for the same reason. `clicked` and `held` are different
-intentions, not two values of one, and telling them apart is the whole of what a dimmer's up button
-is for: a click steps, a hold ramps until let go. A rule binds to one of them and is not woken by
-the other.
+Which key, and what was done to it, are parameters. That is only usable because a trigger can
+match on them: `pressed { key = 2, action = "held" }` binds to one key of one keypad, and a click
+and a hold are different rules rather than two values nothing can tell apart. Before triggers
+could do that, this contract had to be one binding per key — the shape is a consequence of what
+rules can express, and it changed when they got better.
 
-Nothing here is gated on the device being able to *do* anything, because it cannot. A button resolves
-to no commands at all, and the tile drawn for one is a record of what it last did rather than a
-control. What varies between keypads is which actions the hardware can distinguish, so that is what
-the capabilities describe.
+Keys are numbered from 1, in the order the device itself reports them. A keypad that names them —
+"On", "Favourite", a scene — carries those in `key_labels`, so a rule editor can offer "Off"
+rather than "key 4".
+
+Nothing here is gated on the device being able to *do* anything, because it cannot. A keypad
+resolves to no commands at all, and the tile drawn for one records what it last did rather than
+offering a control. What varies between them is which actions the hardware can distinguish, so
+that is what the capabilities describe.
 """
 
 [capabilities]
-label = { type = "string", default = "", doc = "What is printed on the button — \"On\", \"Off\", \"I\", a scene name. Empty when it is unmarked." }
-has_hold = { type = "bool", default = false, doc = "Tells a long press apart from a short one — see `held` and `released`" }
+key_count = { type = "u32", default = 1, doc = "How many keys. A rule editor offers this many; a keypad reporting a key beyond it is a driver bug worth seeing rather than hiding." }
+key_labels = { type = "string", default = "", doc = "What is printed on them, in order, comma separated — \"On,Up,Down,Off\". Empty where they are unmarked, and a rule editor falls back to numbers." }
+has_hold = { type = "bool", default = false, doc = "Tells a long press apart from a short one — see the `held` and `released` actions" }
 has_repeat = { type = "bool", default = false, doc = "Keeps reporting while the button is held down, rather than once" }
 has_double = { type = "bool", default = false, doc = "Distinguishes a double press" }
 has_triple = { type = "bool", default = false, doc = "Distinguishes a triple press" }
@@ -45,14 +50,17 @@ doc = """
 Pressed and let go, with no long press in between. The everyday one, and the only action every
 button has — a device that can tell nothing else apart still reports this.
 """
+params.key = { type = "u32", min = 1, doc = "Which key, numbered from 1 as the device reports them." }
 
 [notifications.double_clicked]
 title = "Double-clicked"
 requires = "has_double"
+params.key = { type = "u32", min = 1, doc = "Which key, numbered from 1 as the device reports them." }
 
 [notifications.triple_clicked]
 title = "Triple-clicked"
 requires = "has_triple"
+params.key = { type = "u32", min = 1, doc = "Which key, numbered from 1 as the device reports them." }
 
 [notifications.held]
 title = "Held"
@@ -61,6 +69,7 @@ Crossed from a press into a long press. Sent once, when the threshold is passed 
 Pair it with `released` to bracket the hold, which is what a ramp needs: start on this, stop on that.
 """
 requires = "has_hold"
+params.key = { type = "u32", min = 1, doc = "Which key, numbered from 1 as the device reports them." }
 
 [notifications.repeating]
 title = "Still held"
@@ -72,11 +81,13 @@ once and then `released`, and would be fought by a stream of these. A step-per-t
 one notch each time — wants exactly these and would never move on `held` alone.
 """
 requires = "has_repeat"
+params.key = { type = "u32", min = 1, doc = "Which key, numbered from 1 as the device reports them." }
 
 [notifications.released]
 title = "Released"
 doc = "A long press ended. Only meaningful where `held` was sent; a plain click reports `clicked` and nothing else."
 requires = "has_hold"
+params.key = { type = "u32", min = 1, doc = "Which key, numbered from 1 as the device reports them." }
 
 [notifications.rotated_clockwise]
 title = "Turned clockwise"
@@ -90,11 +101,13 @@ has to be able to bind to one way round.
 """
 requires = "is_rotary"
 params.steps = { type = "u32" }
+params.key = { type = "u32", min = 1, doc = "Which key, numbered from 1 as the device reports them." }
 
 [notifications.rotated_counter_clockwise]
 title = "Turned anticlockwise"
 requires = "is_rotary"
 params.steps = { type = "u32" }
+params.key = { type = "u32", min = 1, doc = "Which key, numbered from 1 as the device reports them." }
 
 [notifications.battery_changed]
 title = "Battery changed"
@@ -112,6 +125,6 @@ params.online = { type = "bool" }
 #
 # Written by the driver rather than derived from a notification parameter, because the interesting
 # part is *which* notification arrived, and that is not carried in any of their parameters.
-last_action = { title = "Last action", type = "string" }
+last_action = { title = "Last action", type = "string", doc = "What the keypad last did, key included — \"Up held\". A tile saying only \"held\" on a four-key remote is a tile nobody can read." }
 battery = { title = "Battery", type = "u8", from = "percent" }
 online = { title = "Reachable", type = "bool" }

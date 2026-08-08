@@ -367,10 +367,18 @@ pub struct ImportedRule {
     /// Which offered device starts it: an index into [`SetupStep::Done`]'s `devices`.
     #[serde(default)]
     pub when_device: usize,
-    /// Which of that device's proxies — the `[[proxy]] id` from the manifest. Button 2 of a
-    /// four-button remote is `2`.
+    /// Which of that device's proxies — the `[[proxy]] id` from the manifest. A multi-sensor's
+    /// motion binding rather than its temperature one.
     #[serde(default)]
     pub when_proxy: LocalId,
+    /// Notification parameters that must match, for a proxy that carries several of something.
+    ///
+    /// A keypad is one binding with its keys as parameters, so the proxy id alone cannot say
+    /// *which* key a suggested rule is about — `{ "key": 2 }` is what distinguishes the Up
+    /// button from the Off one. Empty means any, which is right for everything that has one of
+    /// whatever it is.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub when_params: std::collections::BTreeMap<String, serde_json::Value>,
     /// The notifications that start it: `clicked`, `held`. Each is checked against the contract.
     ///
     /// Several, because one button often means one intention through more than one event. A
