@@ -307,7 +307,9 @@ pub struct PickRow {
 }
 
 /// A device a driver found and is offering to set up.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `Default` is derived so a field added here later does not break every driver that builds one.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Candidate {
     /// What to call it in the list — distinct enough to tell two of the same apart.
     pub label: String,
@@ -322,6 +324,20 @@ pub struct Candidate {
     /// What the driver confirmed when it checked — proof it is really there.
     #[serde(default)]
     pub verified: String,
+    /// Where the system being set up says this lives. Empty when it has no idea, which is the
+    /// normal case.
+    ///
+    /// A **suggestion**, and the same one [`crate::adapter::Node::room`] makes, for the same
+    /// reasons and with the same guarantees: rooms belong to the project, nothing here creates
+    /// one behind anybody's back, and core matches or creates only at the moment an installer
+    /// adopts — with the list on screen. A driver still cannot rename a room or delete one.
+    ///
+    /// It exists because a hub for a whole house is the case where hand-placing does not scale.
+    /// A Hue bridge with forty bulbs on it already knows which room each one is in, because
+    /// somebody sat down and filed them in the Hue app; without this, adopting that bridge means
+    /// doing the same work a second time, from a list of forty devices called "Hue color lamp 1".
+    #[serde(default)]
+    pub room: String,
 }
 
 /// One screen of a driver's setup flow.
