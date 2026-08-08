@@ -429,6 +429,17 @@ impl Package {
                     if name == "manifest.toml" || name.starts_with("manifests/") {
                         continue;
                     }
+                    // An adapter's tree is taken whole, which means packing one *in place*
+                    // takes the build directory with it — a debug binary, the rustc cache,
+                    // every intermediate object. The result installs and even runs, so
+                    // nothing complains; it is just a driver package hundreds of times larger
+                    // than the driver. None of these is ever payload.
+                    if matches!(
+                        entry.file_name().to_string_lossy().as_ref(),
+                        "target" | "node_modules" | ".git"
+                    ) {
+                        continue;
+                    }
                     if p.is_dir() {
                         stack.push(p);
                         continue;
@@ -478,6 +489,15 @@ impl Package {
         if readme.exists() {
             zip.start_file("docs/README.md", opts)?;
             zip.write_all(&std::fs::read(readme)?)?;
+        }
+
+        // The driver's own settings screen, if it has one. One self-contained page: the
+        // configurator renders it in a frame from the text, so a second file it tried to
+        // fetch would not be there to fetch.
+        let ui = dir.join("ui").join("index.html");
+        if ui.exists() {
+            zip.start_file("ui/index.html", opts)?;
+            zip.write_all(&std::fs::read(ui)?)?;
         }
 
         zip.finish()?;

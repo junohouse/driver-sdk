@@ -237,6 +237,31 @@ pub struct TransportDecl {
     /// device (or inherited from its bridge) or the connection is refused.
     #[serde(default)]
     pub tls: bool,
+    /// How to recognise this hardware on a network it does not announce itself on.
+    ///
+    /// Set it and a controller with this driver *installed* sweeps its own network for `port`
+    /// when a survey runs, so the address does not have to be found and typed in. Leave it
+    /// unset and nothing is swept — see [`crate::manifest::Probe`] for why this is opt-in and
+    /// why it only ever applies to installed drivers.
+    pub probe: Option<Probe>,
+}
+
+/// What to send to something that might be this driver's hardware, and what proves it is.
+///
+/// The point is to be *sure*. An open port says only that something is listening on the number
+/// this driver expects, which on a busy network is a coin toss; a reply that could only have
+/// come from the right software is an identification. So the exchange wants to be one that
+/// needs no credentials and grants nothing — a refusal is ideal, because being told to go away
+/// in the right dialect proves who is talking.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Probe {
+    /// Sent on connect. Nothing is sent if this is absent, and an open port is the whole claim.
+    pub send: Option<String>,
+    /// Confirmed if the reply contains this. Matched as a plain substring, not a pattern:
+    /// a discovery rule is read by whoever is wiring the house up, and a regex in a manifest
+    /// is a second language to learn to answer "would this find my box".
+    pub expect: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -545,6 +570,52 @@ mod id_tests {
                 "`{hostile}` was accepted as a driver id"
             );
         }
+    }
+
+    /// A probe's `send` goes onto a socket byte for byte, so whether TOML treated `\n` as an
+    /// escape or as two characters decides whether the far side ever sees a complete line.
+    /// A driver that declares a probe in a literal string finds nothing, silently, for ever.
+    #[test]
+    fn a_probe_line_ends_in_a_real_newline() {
+        let m: Manifest = toml::from_str(
+            r#"
+            [driver]
+            id = "juno.control4"
+            name = "Control4"
+            version = "1.0.0"
+            runtime = "adapter"
+
+            [adapter]
+            exec = "juno-control4"
+
+            [[proxy]]
+            id = 1
+            type = "bridge"
+
+            [[transport]]
+            kind = "network"
+            port = 7421
+
+            [transport.probe]
+            send = "{\"op\":\"hello\",\"token\":\"\"}\n"
+            expect = "\"op\":\"denied\""
+            "#,
+        )
+        .expect("manifest with a probe should parse");
+
+        let probe = m.transport[0].probe.as_ref().expect("probe should be there");
+        let send = probe.send.as_deref().unwrap();
+        assert!(send.ends_with('\n'), "probe line must end in a newline: {send:?}");
+        assert!(send.contains(r#""op":"hello""#), "quotes should be real: {send:?}");
+        assert_eq!(probe.expect.as_deref(), Some(r#""op":"denied""#));
+    }
+
+    /// A transport without one is the normal case, and must stay the normal case: a missing
+    /// `[transport.probe]` is what stops a controller sweeping the network for every driver.
+    #[test]
+    fn a_transport_without_a_probe_sweeps_nothing() {
+        let m = manifest_with("roku.tv").unwrap();
+        assert!(m.transport.iter().all(|t| t.probe.is_none()));
     }
 
     #[test]
