@@ -1,13 +1,15 @@
 name = "room"
-version = 1
+# 2: `activate_scene` and `scene_activated` removed — declared, drawn in the editor, and answered
+# with an error. `all_lights_on`, `dim_up` and `dim_down` added to match what core actually does.
+version = 2
 title = "Room"
 category = "system"
 description = """
 Not a device — the unit of user intent, and the primary handle for both keypads and the AI.
 
 A room owns its bindings, its sinks (which consumer connection is the display, which is the
-audio endpoint), its scenes, and its authored context. Room commands resolve through the
-pathfinder into device commands; nobody programs a button sequence by hand.
+audio endpoint), and its authored context. Room commands resolve through the pathfinder into
+device commands; nobody programs a button sequence by hand.
 
 Rooms are created by the project, not by a driver. This proxy exists so that rooms are
 addressable through exactly the same contract as everything else.
@@ -50,13 +52,55 @@ title = "Volume down"
 title = "Mute or unmute"
 params.mute = { type = "bool" }
 
-[commands.activate_scene]
-title = "Activate a scene"
-params.name = { type = "string" }
+# `activate_scene` used to be declared here, and is not, because nothing was behind it.
+#
+# It was in this contract, offered in the automations editor's room-command list, and used as the
+# worked example for a room action in the architecture document — and core answered it with
+# "scenes are not implemented yet". A household could build that rule, save it, and watch it do
+# nothing. A contract that promises what the house cannot do is worse than one that admits the gap,
+# because the promise is what the editor draws its buttons from.
+#
+# It comes back when there is a scene to activate. What is missing is not the command: it is
+# somewhere to keep "these five lights, each at its own level and colour", which nothing in the
+# project can hold today.
 
 [commands.all_lights_off]
 title = "All lights off"
 requires = "has_lighting"
+
+[commands.all_lights_on]
+title = "All lights on"
+doc = """
+Every light in the room to one level, or to full when none is given. A switch, having no level of
+its own, simply comes on.
+
+Implemented all along and never declared — the same drift as `activate_scene`, in the opposite
+direction. Between them the editor offered the room command that fails and hid the one that works.
+"""
+requires = "has_lighting"
+params.level = { type = "u8", min = 0, max = 100, optional = true }
+
+[commands.dim_up]
+title = "Brighter"
+doc = """
+Every light in the room a step brighter, relative to wherever each already is.
+
+Relative, and that is the whole point of it. A keypad's brighter button does not mean "go to 70%",
+it means "more than now" — and "now" differs per light and changes every time somebody touches one.
+Absolute levels cannot say that, which is why a four-button dimmer had nothing to map its middle
+two buttons onto.
+
+Holding comes free. A remote that repeats while it is held down triggers this again on every
+repeat, so a single rule gives a step per click and a ramp per hold.
+"""
+requires = "has_lighting"
+params.step = { type = "u8", min = 1, max = 100, optional = true }
+
+[commands.dim_down]
+title = "Dimmer"
+doc = "Every light in the room a step dimmer. The same as `dim_up`, downward."
+requires = "has_lighting"
+params.step = { type = "u8", min = 1, max = 100, optional = true }
 
 [notifications.source_changed]
 title = "Source changed"
@@ -75,9 +119,7 @@ params.mute = { type = "bool" }
 title = "Room turned on or off"
 params.on = { type = "bool" }
 
-[notifications.scene_activated]
-title = "Scene activated"
-params.name = { type = "string" }
+# `scene_activated` went with `activate_scene`, and for the same reason: nothing could send it.
 
 [notifications.button_action]
 title = "Button pressed"
