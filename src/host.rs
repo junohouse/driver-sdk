@@ -416,6 +416,30 @@ pub enum SetupStep {
         #[serde(default)]
         note: String,
     },
+    /// Core should make a client identity and re-enter with it in `input`.
+    ///
+    /// The third step core acts on itself, and here for the same reason as [`Self::Fetch`]:
+    /// so drivers do not each ship their own. A pairing certificate is the only crypto any
+    /// driver here has ever needed, and doing it in the driver cost 291 KB — `rcgen`, `ring`,
+    /// and seven crates behind them, statically linked for four lines of use, every one of
+    /// which the controller already had. A driver is a separate library, so nothing it links
+    /// is shared with anything; a `SetupStep` is.
+    ///
+    /// Comes back as `input.key_pem` and `input.csr_pem`. The private key is generated in the
+    /// controller and handed to the driver in the flow state, which is the same trust the
+    /// driver already has — it is the thing that will present the certificate. What it is
+    /// spared is the code that makes one.
+    ///
+    /// Nothing about the key type is offered. Devices that demand mutual TLS during pairing
+    /// accept what the controller emits, and a knob here would be a way to pick something
+    /// weaker rather than something that works.
+    MakeIdentity {
+        /// The certificate's common name, and the CSR's subject.
+        #[serde(default)]
+        common_name: String,
+        #[serde(default)]
+        note: String,
+    },
     /// Nothing to do yet — try again shortly. Waiting for a link button press.
     Wait {
         title: String,
