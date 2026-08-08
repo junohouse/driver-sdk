@@ -371,11 +371,16 @@ pub struct ImportedRule {
     /// four-button remote is `2`.
     #[serde(default)]
     pub when_proxy: LocalId,
-    /// The notification that starts it: `clicked`, `held`. Checked against the contract.
+    /// The notifications that start it: `clicked`, `held`. Each is checked against the contract.
+    ///
+    /// Several, because one button often means one intention through more than one event. A
+    /// brighter button steps on `clicked` and ramps on `repeating`, and those are the same rule —
+    /// splitting them into two would put two lines on the automations page that a household would
+    /// have to know to enable together.
     #[serde(default)]
-    pub when_event: String,
+    pub when_events: Vec<String>,
     /// A state key instead of an event, for a rule that starts on a sensor rather than a press.
-    /// Mutually exclusive with `when_event`.
+    /// Mutually exclusive with `when_events`.
     #[serde(default)]
     pub when_key: String,
     /// The value that key must reach. Defaults to `true`.
