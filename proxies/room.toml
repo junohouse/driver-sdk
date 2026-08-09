@@ -1,7 +1,9 @@
 name = "room"
 # 2: `activate_scene` and `scene_activated` removed — declared, drawn in the editor, and answered
 # with an error. `all_lights_on`, `dim_up` and `dim_down` added to match what core actually does.
-version = 2
+# 3: `activate_scene` back, with scenes behind it this time. `scene_activated` stays out: nothing
+# emits it, and that was half of what was wrong with it before.
+version = 3
 title = "Room"
 category = "system"
 description = """
@@ -52,17 +54,20 @@ title = "Volume down"
 title = "Mute or unmute"
 params.mute = { type = "bool" }
 
-# `activate_scene` used to be declared here, and is not, because nothing was behind it.
-#
-# It was in this contract, offered in the automations editor's room-command list, and used as the
-# worked example for a room action in the architecture document — and core answered it with
-# "scenes are not implemented yet". A household could build that rule, save it, and watch it do
-# nothing. A contract that promises what the house cannot do is worse than one that admits the gap,
-# because the promise is what the editor draws its buttons from.
-#
-# It comes back when there is a scene to activate. What is missing is not the command: it is
-# somewhere to keep "these five lights, each at its own level and colour", which nothing in the
-# project can hold today.
+[commands.activate_scene]
+title = "Activate a scene"
+doc = """
+Put the room into a state somebody named — "Relax", "Reading". A scene is a set of levels and
+colours, one per light, kept by the project and applied together.
+
+This was declared here once before with nothing behind it, and core answered it with an error. It
+is back because the thing it needed now exists: somewhere to keep "these five lights, each at its
+own level", which is what a scene is and what no amount of `all_lights_on` could express.
+
+Not gated on `has_lighting`. A scene is a set of device states and there is nothing about it that
+has to be a light, even though every one anybody writes will be.
+"""
+params.name = { type = "string" }
 
 [commands.all_lights_off]
 title = "All lights off"
