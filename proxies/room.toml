@@ -52,7 +52,23 @@ title = "Volume down"
 title = "Mute or unmute"
 params.mute = { type = "bool" }
 
-# `activate_scene` used to be declared here, and is not, because nothing was behind it.
+[commands.activate_scene]
+title = "Activate a scene"
+doc = """
+Put the room into a named arrangement — "Evening", "Watching a film". What the arrangement *is*
+lives in the project, so a scene is a thing a household made rather than a thing a driver knows.
+"""
+params.scene = { type = "string" }
+
+[notifications.scene_activated]
+title = "Scene activated"
+doc = "Which arrangement the room was last put into, so a tile can say so."
+params.scene = { type = "string" }
+
+# Removed once, and back deliberately — the note below is kept because the reason it left is the
+# reason it may only return now.
+#
+# `activate_scene` used to be declared here, and was taken out, because nothing was behind it.
 #
 # It was in this contract, offered in the automations editor's room-command list, and used as the
 # worked example for a room action in the architecture document — and core answered it with
@@ -120,6 +136,8 @@ title = "Room turned on or off"
 params.on = { type = "bool" }
 
 # `scene_activated` went with `activate_scene`, and for the same reason: nothing could send it.
+# Both are back, and `house::scene` is what changed — the contract promises what the house can now
+# actually do, which is the only condition on which either should have returned.
 
 [notifications.button_action]
 title = "Button pressed"
