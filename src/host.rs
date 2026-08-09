@@ -415,11 +415,10 @@ pub struct ImportedScene {
     pub title: String,
     /// The rooms it covers, by name. Empty for one that spans the house.
     ///
-    /// Several, because a scene is not a property of one room. An open-plan kitchen, dining room
-    /// and living room are one space to anybody standing in them and three rooms in the project,
-    /// and an evening in that space is one scene — there is no single room it belongs to. The
-    /// same goes for any grouping the far side has that does not line up with walls, which is
-    /// most of what a Hue zone is for.
+    /// Several, because a scene does not always follow walls — an open plan is one space and two
+    /// rooms, and a grouping the far side made may be neither. Names a room does not have here
+    /// are dropped rather than created: nothing of that room was adopted, so the scene has
+    /// nothing to do in it.
     #[serde(default)]
     pub rooms: Vec<String>,
     pub steps: Vec<ImportedAction>,
