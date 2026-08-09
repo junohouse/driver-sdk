@@ -182,16 +182,22 @@ pub struct ActionDecl {
     /// Which of this driver's devices the action belongs to. See [`ActionOn`].
     #[serde(default)]
     pub on: ActionOn,
-    /// Settings the device must actually have, by the adapter's own reckoning.
+    /// Settings the device must have for this action to mean anything — **any one of them**.
     ///
     /// [`ActionOn`] narrows by *kind*; this narrows within a kind. An SNZB-06P and a door
     /// contact are both `sensor`, and only one of them has a presence hold — the difference is
     /// not in any contract and core cannot know it, so the adapter reports it per node in
     /// [`crate::adapter::Node::settings`] and this names what to look for.
     ///
+    /// Any rather than all, and named so it cannot be read the other way: the list is almost
+    /// always one knob under several vendors' spellings — `occupancy_timeout` on a presence
+    /// sensor, `motion_timeout` on a PIR — and an action that needed both at once would apply
+    /// to nothing. A driver that genuinely needs a conjunction does not exist yet; when one
+    /// does it can have its own field rather than silently changing what this one means.
+    ///
     /// Empty means the action applies to every device the scope allows.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub needs: Vec<String>,
+    pub needs_one_of: Vec<String>,
 }
 
 /// Which of a driver's devices an action belongs to.
