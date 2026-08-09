@@ -188,6 +188,7 @@ pub trait DriverModule: Send + Sync {
             SetupStep::Done {
                 devices: Vec::new(),
                 rules: Vec::new(),
+                scenes: Vec::new(),
             },
             Value::Null,
         )
@@ -397,6 +398,27 @@ pub struct ImportedRule {
     pub then: Vec<ImportedAction>,
 }
 
+/// A named arrangement the far side already has — a Hue scene.
+///
+/// The other half of what a commissioned hub knows. Somebody sat and got a room right, named it
+/// "Relax", and that is a thing no amount of describing reproduces: it is five lights at five
+/// levels and two colour temperatures, and the value of it is precisely the detail.
+///
+/// Late-bound like [`ImportedRule`], and for the same reason — a scene names bindings, and no
+/// binding exists until the installer has adopted something. `steps` point at the offered devices
+/// by position, and core resolves them once the batch is in.
+///
+/// Unlike a rule, a scene arrives *live*, because a scene does nothing until somebody asks for it.
+/// There is no equivalent of a rule quietly running at midnight, so there is nothing to hold back.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ImportedScene {
+    pub title: String,
+    /// The room it belongs to, by name. Empty for one that spans the house.
+    #[serde(default)]
+    pub room: String,
+    pub steps: Vec<ImportedAction>,
+}
+
 /// One thing an [`ImportedRule`] does.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -551,6 +573,9 @@ pub enum SetupStep {
         /// with their origin — see [`ImportedRule`]. Empty for every driver that does not look.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         rules: Vec<ImportedRule>,
+        /// Named arrangements the far side already has — see [`ImportedScene`].
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        scenes: Vec<ImportedScene>,
     },
     /// Could not continue, and why.
     Failed { reason: String },
