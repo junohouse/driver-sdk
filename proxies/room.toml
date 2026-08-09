@@ -125,6 +125,8 @@ title = "Room turned on or off"
 params.on = { type = "bool" }
 
 # `scene_activated` went with `activate_scene`, and for the same reason: nothing could send it.
+# Both are back, and `house::scene` is what changed — the contract promises what the house can now
+# actually do, which is the only condition on which either should have returned.
 
 [notifications.button_action]
 title = "Button pressed"
