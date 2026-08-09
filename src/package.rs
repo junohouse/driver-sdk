@@ -308,10 +308,36 @@ impl Package {
             .with_context(|| format!("opening {}", path.display()))?;
         let mut zip = zip::ZipArchive::new(file)?;
 
-        if into.exists() {
-            std::fs::remove_dir_all(into)?;
+        // Extract beside the destination and move it into place, rather than clearing the
+        // destination and filling it in.
+        //
+        // The old order left a window: between the `remove_dir_all` and the last file written,
+        // the tree on disk was partial. Two unpacks of the same package racing — a parallel
+        // test run, two controllers on one machine, an install while a supervisor is reading
+        // the tree — meant one deleting what the other was still writing, which surfaces as
+        // `Directory not empty` or a half-populated adapter that exec's a file that is not
+        // there yet. An adapter package is thousands of small files, so the window is wide.
+        //
+        // A rename is atomic within a filesystem, so the destination is either the old tree or
+        // the whole new one, never half of either. The staging name carries the pid so two
+        // processes do not collide in the staging step either.
+        // Unique per unpack, not per process: two threads in one controller install the same
+        // package at the same time as readily as two processes do, and a pid alone would have
+        // them staging into the same directory.
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let ticket = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let staging = into.with_file_name(format!(
+            "{}.unpack-{}-{}",
+            into.file_name().unwrap_or_default().to_string_lossy(),
+            std::process::id(),
+            ticket
+        ));
+        let _ = std::fs::remove_dir_all(&staging);
+        if let Some(parent) = into.parent() {
+            std::fs::create_dir_all(parent)?;
         }
-        std::fs::create_dir_all(into)?;
+        std::fs::create_dir_all(&staging)?;
+        let into = &staging;
 
         for i in 0..zip.len() {
             let mut entry = zip.by_index(i)?;
@@ -341,7 +367,54 @@ impl Package {
                 let _ = std::fs::set_permissions(&target, std::fs::Permissions::from_mode(mode));
             }
         }
-        Ok(())
+
+        // Swap it in. `rename` onto an existing directory fails, so the old tree moves aside
+        // first and is deleted after — that way a failure here leaves the old one recoverable
+        // rather than leaving nothing at all.
+        let dest = staging.with_file_name(
+            staging
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .rsplit_once(".unpack-")
+                .map(|(name, _)| name.to_string())
+                .unwrap_or_default(),
+        );
+        let previous = dest.with_extension(format!("old-{}-{}", std::process::id(), ticket));
+
+        // Moving the old tree aside and the new one in has to happen as one step, or two
+        // installers interleave: both see no destination, both skip the move-aside, and the
+        // second rename lands on a directory the first just created. Within a process a lock
+        // settles it; across processes the loser simply tries again, because by then the
+        // destination exists and will be moved aside on the next pass.
+        static SWAP: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let mut last: Option<std::io::Error> = None;
+        for _ in 0..8 {
+            let _held = SWAP.lock().unwrap_or_else(|e| e.into_inner());
+            let had_previous = dest.exists();
+            if had_previous && std::fs::rename(&dest, &previous).is_err() {
+                continue; // somebody else is mid-swap; look again
+            }
+            match std::fs::rename(&staging, &dest) {
+                Ok(()) => {
+                    if had_previous {
+                        let _ = std::fs::remove_dir_all(&previous);
+                    }
+                    return Ok(());
+                }
+                Err(e) => {
+                    // Put the old tree back rather than leaving the driver with nothing.
+                    if had_previous {
+                        let _ = std::fs::rename(&previous, &dest);
+                    }
+                    last = Some(e);
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&staging);
+        Err(last
+            .map(anyhow::Error::from)
+            .unwrap_or_else(|| anyhow::anyhow!("could not install {}", dest.display())))
     }
 
     /// Write a `.junodrv` from a directory containing `manifest.toml` and a payload.
@@ -429,6 +502,17 @@ impl Package {
                     if name == "manifest.toml" || name.starts_with("manifests/") {
                         continue;
                     }
+                    // An adapter's tree is taken whole, which means packing one *in place*
+                    // takes the build directory with it — a debug binary, the rustc cache,
+                    // every intermediate object. The result installs and even runs, so
+                    // nothing complains; it is just a driver package hundreds of times larger
+                    // than the driver. None of these is ever payload.
+                    if matches!(
+                        entry.file_name().to_string_lossy().as_ref(),
+                        "target" | "node_modules" | ".git"
+                    ) {
+                        continue;
+                    }
                     if p.is_dir() {
                         stack.push(p);
                         continue;
@@ -478,6 +562,15 @@ impl Package {
         if readme.exists() {
             zip.start_file("docs/README.md", opts)?;
             zip.write_all(&std::fs::read(readme)?)?;
+        }
+
+        // The driver's own settings screen, if it has one. One self-contained page: the
+        // configurator renders it in a frame from the text, so a second file it tried to
+        // fetch would not be there to fetch.
+        let ui = dir.join("ui").join("index.html");
+        if ui.exists() {
+            zip.start_file("ui/index.html", opts)?;
+            zip.write_all(&std::fs::read(ui)?)?;
         }
 
         zip.finish()?;
@@ -554,5 +647,68 @@ mod tests {
             manifest("z.two", false, None),
         ];
         assert_eq!(lead_index(&flat), 0);
+    }
+}
+
+#[cfg(test)]
+mod unpack_tests {
+    use super::*;
+
+    /// A package with enough files that a torn write is easy to hit.
+    fn a_package(dir: &Path, files: usize) -> PathBuf {
+        std::fs::create_dir_all(dir.join("manifests")).unwrap();
+        std::fs::write(
+            dir.join("manifests/test.toml"),
+            "[driver]\nid = \"t.t\"\nname = \"T\"\nmanufacturer = \"T\"\nversion = \"1.0.0\"\nruntime = \"adapter\"\n\n[adapter]\nexec = \"node\"\n\n[[proxy]]\nid = 1\ntype = \"bridge\"\nprimary = true\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.join("lib")).unwrap();
+        for i in 0..files {
+            std::fs::write(dir.join("lib").join(format!("f{i}.js")), "x".repeat(200)).unwrap();
+        }
+        let out = dir.parent().unwrap().join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        Package::build(dir, &out).expect("packs")
+    }
+
+    /// Unpacking the same package twice at once used to have one process delete the tree the
+    /// other was still writing into — `Directory not empty`, or an adapter whose `exec` is
+    /// briefly not on disk. Both must succeed and the result must be whole.
+    #[test]
+    fn two_unpacks_of_one_package_do_not_tear_each_other_down() {
+        let tmp = std::env::temp_dir().join(format!("sdk-unpack-race-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let src = tmp.join("src");
+        let pkg = a_package(&src, 300);
+        let dest = tmp.join("installed");
+
+        std::thread::scope(|s| {
+            let handles: Vec<_> = (0..4)
+                .map(|_| {
+                    let pkg = pkg.clone();
+                    let dest = dest.clone();
+                    s.spawn(move || Package::unpack(&pkg, &dest))
+                })
+                .collect();
+            for h in handles {
+                h.join().unwrap().expect("every concurrent unpack succeeds");
+            }
+        });
+
+        // Whole, not half: every file the archive carried is present.
+        assert!(dest.join("manifests/test.toml").is_file());
+        let n = std::fs::read_dir(dest.join("lib")).unwrap().count();
+        assert_eq!(n, 300, "the tree is complete, not partially written");
+
+        // And nothing is left behind.
+        let leftovers: Vec<_> = std::fs::read_dir(&tmp)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.contains(".unpack-") || n.contains(".old-"))
+            .collect();
+        assert!(leftovers.is_empty(), "staging dirs left behind: {leftovers:?}");
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
