@@ -160,6 +160,20 @@ pub struct Node {
     /// that had already been commissioned once.
     #[serde(default)]
     pub room: String,
+    /// Which of the driver's per-device settings *this* node actually has.
+    ///
+    /// `capabilities` says what the device can be commanded to do, resolved against its contract.
+    /// This is the other half: the knobs that are not commands at all — an occupancy hold, a
+    /// sensitivity — which a driver exposes as `[[action]]` and which exist on some devices of a
+    /// class and not others. An SNZB-06P and a door contact are both `sensor`; only one has a
+    /// hold time.
+    ///
+    /// Same reasoning as `capabilities`, and the same reason it cannot live in core: the answer
+    /// is in `zigbee-herdsman-converters`, changes weekly, and is per model. An action naming
+    /// one of these in [`crate::manifest::ActionDecl::needs`] appears only on the nodes that
+    /// reported it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub settings: Vec<String>,
 }
 
 fn yes() -> bool {
@@ -181,6 +195,7 @@ impl Default for Node {
             capabilities: BTreeMap::new(),
             online: true,
             room: String::new(),
+            settings: Vec::new(),
         }
     }
 }

@@ -179,6 +179,66 @@ pub struct ActionDecl {
     /// sentence explaining what is about to happen.
     #[serde(default)]
     pub danger: bool,
+    /// Which of this driver's devices the action belongs to. See [`ActionOn`].
+    #[serde(default)]
+    pub on: ActionOn,
+    /// Settings the device must actually have, by the adapter's own reckoning.
+    ///
+    /// [`ActionOn`] narrows by *kind*; this narrows within a kind. An SNZB-06P and a door
+    /// contact are both `sensor`, and only one of them has a presence hold — the difference is
+    /// not in any contract and core cannot know it, so the adapter reports it per node in
+    /// [`crate::adapter::Node::settings`] and this names what to look for.
+    ///
+    /// Empty means the action applies to every device the scope allows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub needs: Vec<String>,
+}
+
+/// Which of a driver's devices an action belongs to.
+///
+/// An action is a driver's, but it is never true of *all* a driver's devices, and treating it as
+/// though it were is a bug the UI cannot correct for: one adapter manifest covers a Zigbee
+/// coordinator and every node behind it, so a declaration with no scope offered "Allow devices to
+/// join" on a battery sensor and "Hold presence for" on the radio. The driver refuses both, with
+/// a reason — but a list of buttons that mostly do not work is not a list anybody reads.
+///
+/// This is the same rule proxy commands already follow: resolved per device, and a thing a device
+/// cannot do does not appear.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum ActionOn {
+    /// The device this manifest describes — a native driver's own device, or an adapter's
+    /// coordinator. The default, because it is what a driver with one device means.
+    #[default]
+    Own,
+    /// Any device the adapter surfaced behind it, whatever kind. `remove_node` is this: it makes
+    /// sense for every node and for none of the coordinators.
+    Node,
+    /// Any of this driver's devices carrying a binding of this proxy type — `sensor`, `light`.
+    /// Covers a node and a native driver's own device alike, since both have bindings.
+    Proxy(String),
+}
+
+impl<'de> Deserialize<'de> for ActionOn {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<ActionOn, D::Error> {
+        // A plain string, so the manifest reads `on = "sensor"` rather than a tagged table for
+        // what is always one word.
+        let s = String::deserialize(d)?;
+        Ok(match s.as_str() {
+            "own" | "self" => ActionOn::Own,
+            "node" => ActionOn::Node,
+            _ => ActionOn::Proxy(s),
+        })
+    }
+}
+
+impl Serialize for ActionOn {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(match self {
+            ActionOn::Own => "own",
+            ActionOn::Node => "node",
+            ActionOn::Proxy(p) => p,
+        })
+    }
 }
 
 /// One argument of an [`ActionDecl`].
