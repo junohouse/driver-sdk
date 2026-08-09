@@ -88,6 +88,20 @@ pub fn belongs_to(lib: &Path, dir: &Path) -> bool {
         return stem == name;
     }
 
+    // A Cargo.toml that is here but did not yield a name is not the same as no Cargo.toml, and
+    // conflating the two is what hid a parse bug for as long as it hid. Falling through to the
+    // directory guess would answer this question with a plausible-looking `false` and send
+    // whoever is packing to look at their build. Say so instead: the caller is a CLI, and a
+    // driver whose manifest cannot be read is a thing somebody has to fix either way.
+    if dir.join("Cargo.toml").exists() {
+        eprintln!(
+            "warning: {} has a Cargo.toml that yields no library name — \
+             cannot tell which compiled file belongs to it",
+            dir.display()
+        );
+        return false;
+    }
+
     // No Cargo.toml: a declarative driver, which has no compiled library to match anyway.
     let Some(name) = dir
         .canonicalize()
@@ -102,9 +116,22 @@ pub fn belongs_to(lib: &Path, dir: &Path) -> bool {
 
 /// The library name cargo will produce for the package in `dir`: `[lib] name` if it sets one,
 /// otherwise the package name with dashes turned into underscores.
+///
+/// `None` means there is no readable `Cargo.toml` here — a declarative driver, which has no
+/// compiled library to name. A file that exists and will not parse is a different thing, and
+/// `belongs_to` treats it as one; see the note there.
+///
+/// **Parsed with `toml::from_str`, not `str::parse`.** They are not the same function. In toml
+/// 0.9 `FromStr for Value` parses a single TOML *value* — `42`, `"foo"`, `{ a = 1 }` — and a
+/// whole document is not one, so an ordinary four-line Cargo.toml comes back
+/// `unexpected content, expected nothing` at the closing bracket of `[package]`. Every other
+/// parse in this crate already goes through `toml::from_str`; this one did not, and `.ok()?`
+/// turned the error into "no Cargo.toml here". The visible symptom was `junodrv pack
+/// --from-target` reporting no compiled driver for every crate in the tree, while the dylib sat
+/// in `target/release` where it said it had looked.
 pub fn lib_name(dir: &Path) -> Option<String> {
     let src = std::fs::read_to_string(dir.join("Cargo.toml")).ok()?;
-    let toml: toml::Value = src.parse().ok()?;
+    let toml: toml::Value = toml::from_str(&src).ok()?;
     if let Some(name) = toml
         .get("lib")
         .and_then(|l| l.get("name"))
@@ -710,5 +737,40 @@ mod unpack_tests {
         assert!(leftovers.is_empty(), "staging dirs left behind: {leftovers:?}");
 
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// An ordinary Cargo.toml yields the library cargo will build from it.
+    ///
+    /// This is pinned against a real manifest rather than a hand-made `toml::Value`, because the
+    /// bug it exists for was in the *parse* and not in anything after it: `str::parse` and
+    /// `toml::from_str` are different functions in toml 0.9, only one of them reads a document,
+    /// and the difference showed up as `junodrv pack --from-target` finding no compiled driver
+    /// for any crate — while naming the directory it had just looked in and not found it.
+    ///
+    /// A test built on an already-parsed value would agree with the code and miss it entirely.
+    #[test]
+    fn a_cargo_manifest_names_the_library_cargo_will_build() {
+        let dir = std::env::temp_dir().join(format!("sdk-libname-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let write = |src: &str| std::fs::write(dir.join("Cargo.toml"), src).unwrap();
+
+        // The common case: the crate is named for what it exports, the directory for the
+        // product, and dashes become underscores the way cargo does it.
+        write("[package]\nname = \"juno-driver-hue\"\nversion = \"1.2.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n");
+        assert_eq!(lib_name(&dir).as_deref(), Some("juno_driver_hue"));
+        assert!(belongs_to(Path::new("libjuno_driver_hue.dylib"), &dir));
+        assert!(belongs_to(Path::new("juno_driver_hue.dll"), &dir));
+        // Another driver's library in the same shared `target/` is not this one's.
+        assert!(!belongs_to(Path::new("libjuno_driver_roku.dylib"), &dir));
+
+        // An explicit `[lib] name` wins over the package name.
+        write("[package]\nname = \"signify-hue\"\nversion = \"1.0.0\"\n\n[lib]\nname = \"juno_driver_hue\"\n");
+        assert_eq!(lib_name(&dir).as_deref(), Some("juno_driver_hue"));
+
+        // No Cargo.toml is a declarative driver, and that is not an error.
+        std::fs::remove_file(dir.join("Cargo.toml")).unwrap();
+        assert_eq!(lib_name(&dir), None);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
