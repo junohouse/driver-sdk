@@ -413,9 +413,14 @@ pub struct ImportedRule {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ImportedScene {
     pub title: String,
-    /// The room it belongs to, by name. Empty for one that spans the house.
+    /// The rooms it covers, by name. Empty for one that spans the house.
+    ///
+    /// Several, because a scene does not always follow walls — an open plan is one space and two
+    /// rooms, and a grouping the far side made may be neither. Names a room does not have here
+    /// are dropped rather than created: nothing of that room was adopted, so the scene has
+    /// nothing to do in it.
     #[serde(default)]
-    pub room: String,
+    pub rooms: Vec<String>,
     pub steps: Vec<ImportedAction>,
 }
 
