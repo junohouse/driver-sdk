@@ -1,10 +1,5 @@
 name = "media_player"
-# 2: `browse` added. `has_browse` promised content "can be listed and selected by id" and
-# nothing listed it — the capability only ever gated `play_item`. Results arrive as a
-# notification because a command cannot return one; see `browse_results`. `play_item` grew
-# `queue_action` and `shuffle`, which Sonos, Spotify and every other queueing service already
-# have, and which would mean touching every media driver if they landed later.
-version = 2
+version = 1
 title = "Media Player"
 category = "av"
 description = """
