@@ -586,6 +586,23 @@ pub enum SetupStep {
     Failed { reason: String },
 }
 
+impl SetupStep {
+    /// Finished, with nothing to import.
+    ///
+    /// The overwhelmingly common ending, and the one worth a constructor. `rules` and `scenes`
+    /// were added to [`SetupStep::Done`] later and broke every driver that had written the
+    /// variant out by hand — four of five, all with the same two-line diff. [`Candidate`]
+    /// derives `Default` to head off exactly that, but an enum variant cannot, so this is where
+    /// the same protection has to live. A driver that does import something writes it itself.
+    pub fn done(devices: Vec<Candidate>) -> SetupStep {
+        SetupStep::Done {
+            devices,
+            rules: Vec::new(),
+            scenes: Vec::new(),
+        }
+    }
+}
+
 fn one_second() -> u32 {
     1000
 }
