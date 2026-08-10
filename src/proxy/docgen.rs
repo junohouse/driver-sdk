@@ -24,6 +24,7 @@ fn ty(t: ValueType) -> &'static str {
         ValueType::String => "string",
         ValueType::StringList => "string[]",
         ValueType::Bytes => "bytes",
+        ValueType::Json => "json",
     }
 }
 

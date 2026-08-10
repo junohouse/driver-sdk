@@ -16,6 +16,14 @@ pub enum ValueType {
     StringList,
     /// Opaque bytes. Carried as a hex string on the wire; used only by transport proxies.
     Bytes,
+    /// A structure the contract deliberately does not describe: a page of browse results, a
+    /// search hit list. Every other type exists so a control can be drawn and an argument
+    /// checked without reading the driver — this one exists for payloads whose shape belongs
+    /// to a music service rather than to us, and which are rendered as a list either way.
+    ///
+    /// Arrays and objects only. Allowing scalars would make `json` a synonym for "any" and
+    /// take the rest of the contract's validation down with it.
+    Json,
 }
 
 impl ValueType {
@@ -37,6 +45,7 @@ impl ValueType {
             (ValueType::F32, Value::Number(_)) => true,
             (ValueType::String | ValueType::Bytes, Value::String(_)) => true,
             (ValueType::StringList, Value::Array(a)) => a.iter().all(Value::is_string),
+            (ValueType::Json, Value::Array(_) | Value::Object(_)) => true,
             _ => false,
         }
     }

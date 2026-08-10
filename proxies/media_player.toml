@@ -1,5 +1,10 @@
 name = "media_player"
-version = 1
+# 2: `browse` added. `has_browse` promised content "can be listed and selected by id" and
+# nothing listed it — the capability only ever gated `play_item`. Results arrive as a
+# notification because a command cannot return one; see `browse_results`. `play_item` grew
+# `queue_action` and `shuffle`, which Sonos, Spotify and every other queueing service already
+# have, and which would mean touching every media driver if they landed later.
+version = 2
 title = "Media Player"
 category = "av"
 description = """
@@ -17,6 +22,8 @@ has_browse         = { type = "bool", default = false, doc = "Content can be lis
 has_search         = { type = "bool", default = false }
 has_playlists      = { type = "bool", default = false }
 has_shuffle_repeat = { type = "bool", default = false }
+has_crossfade      = { type = "bool", default = false, doc = "Blends the end of one track into the next" }
+has_queue          = { type = "bool", default = false, doc = "Content can be queued rather than only played now" }
 has_dpad           = { type = "bool", default = false, doc = "Cursor navigation for an on-screen UI" }
 has_apps           = { type = "bool", default = false, doc = "Installed applications can be listed and launched" }
 has_number_keys    = { type = "bool", default = false }
@@ -49,13 +56,41 @@ params.shuffle = { type = "bool" }
 requires = "has_shuffle_repeat"
 params.mode = { type = "string", values = ["off", "one", "all"] }
 
+[commands.set_crossfade]
+requires = "has_crossfade"
+params.crossfade = { type = "bool" }
+
 [commands.play_item]
 doc = "Play a content id previously returned by browse or search"
 requires = "has_browse"
 params.id = { type = "string" }
+params.queue_action = { type = "string", optional = true, values = ["now", "next", "append", "replace"], doc = """
+What to do with the queue. Absent means `now`, which is the only thing a player without
+`has_queue` can do — and why this is optional rather than gated: `requires` lives on a command,
+not a parameter, so a queueless player ignores it rather than being unable to receive it.
+""" }
+params.shuffle = { type = "bool", optional = true, doc = """
+Set shuffle as part of loading, rather than as a second command that races the first. "Shuffle
+my Discover Weekly" is one intent and every service treats it as one call.
+""" }
+
+[commands.browse]
+doc = """
+List what is under `node`. Results do not come back from this call — a command cannot return —
+they arrive as `browse_results` carrying the same `token`.
+"""
+requires = "has_browse"
+params.token  = { type = "string", optional = true, doc = "Echoed back on the matching `browse_results`" }
+params.node   = { type = "string", optional = true, doc = "A container id from an earlier result. Absent means the root." }
+params.offset = { type = "u32", optional = true }
+params.limit  = { type = "u32", optional = true }
 
 [commands.search]
 requires = "has_search"
+# Optional, and it has to be: a Roku declares `has_search` and answers it by opening its own
+# search screen, taking neither a token nor a query. A required parameter here would break
+# every driver that already implements this command.
+params.token = { type = "string", optional = true, doc = "Echoed back on the matching `search_results`" }
 params.query = { type = "string" }
 
 [commands.dpad]
@@ -76,6 +111,40 @@ params.duration_ms = { type = "u32", optional = true }
 [notifications.position_changed]
 requires = "has_seek"
 params.position_ms = { type = "u32" }
+
+[notifications.browse_results]
+doc = """
+One page of what `browse` was asked for, carrying that call's `token`.
+
+`items` is `json` rather than a described structure because its shape belongs to a music
+service and not to us: a Sonos search hit, a Spotify album and a DLNA folder agree on almost
+nothing except that each has a name and can be selected. Every consumer draws them as a list
+and sends the `id` back, which is the whole contract. Each entry:
+
+```json
+{ "id": "...", "name": "...", "subtitle": "...", "art": "...",
+  "playable": true, "container": false }
+```
+
+`container` marks something to browse into — an album, a folder, a service. `playable` and
+`container` are independent: an album is both.
+
+`token` is whatever the `browse` carried, echoed. A driver that was given none sends none, and
+core treats the result as the latest for that binding — which is what one person at one screen
+actually does.
+"""
+requires = "has_browse"
+params.token = { type = "string", optional = true }
+params.items = { type = "json" }
+params.total = { type = "u32", optional = true, doc = "Across all pages, when the source knows it" }
+params.offset = { type = "u32", optional = true }
+
+[notifications.search_results]
+doc = "As `browse_results`, for a `search`."
+requires = "has_search"
+params.token = { type = "string", optional = true }
+params.items = { type = "json" }
+params.total = { type = "u32", optional = true }
 
 [notifications.online_changed]
 params.online = { type = "bool" }
