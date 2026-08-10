@@ -1,5 +1,4 @@
 name = "receiver"
-version = 1
 title = "Receiver"
 category = "av"
 description = "An AVR or integrated amp: switches signal, owns volume, and usually drives a room's speakers."

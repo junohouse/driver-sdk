@@ -1,5 +1,4 @@
 name = "sensor"
-version = 1
 title = "Sensor"
 category = "environment"
 description = """

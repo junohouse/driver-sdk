@@ -201,7 +201,6 @@ impl StateField {
 #[serde(deny_unknown_fields)]
 pub struct Proxy {
     pub name: String,
-    pub version: u32,
     pub title: String,
     #[serde(default)]
     pub category: String,

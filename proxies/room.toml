@@ -1,9 +1,4 @@
 name = "room"
-# 2: `activate_scene` and `scene_activated` removed — declared, drawn in the editor, and answered
-# with an error. `all_lights_on`, `dim_up` and `dim_down` added to match what core actually does.
-# 3: `activate_scene` back, with scenes behind it this time. `scene_activated` stays out: nothing
-# emits it, and that was half of what was wrong with it before.
-version = 3
 title = "Room"
 category = "system"
 description = """
