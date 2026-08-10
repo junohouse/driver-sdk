@@ -345,6 +345,18 @@ pub struct PropertyDecl {
     pub values: Vec<String>,
     #[serde(default)]
     pub unit: String,
+    /// The device cannot work until somebody sets this.
+    ///
+    /// For the ones with no sensible default and no way to discover them — a Sonos API key, an
+    /// account name a driver cannot invent. Distinct from merely having no `default`: plenty
+    /// of properties are optional and blank, and a screen that flagged all of them would flag
+    /// nothing.
+    ///
+    /// Advisory, and the driver still checks. This says what an installer must be told, not
+    /// what the controller enforces — a driver that assumes core blocked an empty value is one
+    /// that panics the day somebody edits the project file by hand.
+    #[serde(default)]
+    pub required: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
