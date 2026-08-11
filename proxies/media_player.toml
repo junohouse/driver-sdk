@@ -17,6 +17,17 @@ has_search         = { type = "bool", default = false }
 has_playlists      = { type = "bool", default = false }
 has_shuffle_repeat = { type = "bool", default = false }
 has_crossfade      = { type = "bool", default = false, doc = "Blends the end of one track into the next" }
+# Whether this box has a volume knob of its own — not whether it is the one a room should use.
+#
+# A Sonos Amp driving speakers is a room's volume; the same Amp feeding a receiver is not, and
+# neither the driver nor the manifest can know which it is. The pathfinder decides: it takes the
+# sink-most thing on the solved path that can set one, so a source declaring volume never
+# hijacks a room where something downstream also has it. Declare what the hardware has and let
+# the wiring answer the other question.
+has_discrete_volume = { type = "bool", default = false }
+has_up_down_volume  = { type = "bool", default = false }
+has_mute            = { type = "bool", default = false }
+volume_max          = { type = "u32",  default = 100 }
 has_queue          = { type = "bool", default = false, doc = "Content can be queued rather than only played now" }
 has_dpad           = { type = "bool", default = false, doc = "Cursor navigation for an on-screen UI" }
 has_apps           = { type = "bool", default = false, doc = "Installed applications can be listed and launched" }
@@ -53,6 +64,22 @@ params.mode = { type = "string", values = ["off", "one", "all"] }
 [commands.set_crossfade]
 requires = "has_crossfade"
 params.crossfade = { type = "bool" }
+
+[commands.set_volume]
+requires = "has_discrete_volume"
+params.level = { type = "u32", min = 0, max = 100, max_cap = "volume_max" }
+
+[commands.volume_up]
+requires = "has_up_down_volume"
+[commands.volume_down]
+requires = "has_up_down_volume"
+
+[commands.set_mute]
+requires = "has_mute"
+params.mute = { type = "bool" }
+
+[commands.mute_toggle]
+requires = "has_mute"
 
 [commands.play_item]
 doc = "Play a content id previously returned by browse or search"
@@ -140,11 +167,21 @@ params.token = { type = "string", optional = true }
 params.items = { type = "json" }
 params.total = { type = "u32", optional = true }
 
+[notifications.volume_changed]
+requires = "has_discrete_volume"
+params.level = { type = "u32" }
+
+[notifications.mute_changed]
+requires = "has_mute"
+params.mute = { type = "bool" }
+
 [notifications.online_changed]
 params.online = { type = "bool" }
 
 [state]
 transport = { type = "string", from = "state" }
+volume    = { title = "Volume", type = "u32", from = "level" }
+mute      = { title = "Muted", type = "bool" }
 app       = { type = "string", doc = "Application currently in the foreground" }
 apps      = { type = "string_list", doc = "Installed applications, as read from the device" }
 app_icons = { type = "string_list", doc = "Artwork for `apps`, one per entry, same order" }

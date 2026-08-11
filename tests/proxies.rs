@@ -121,6 +121,36 @@ fn browse_results_carries_a_page_of_items() {
     );
 }
 
+/// Volume on a media player is about the hardware, not about the room.
+///
+/// A Sonos Amp has a volume knob whether it drives speakers or feeds a receiver, so it declares
+/// one either way — the pathfinder takes the sink-most thing that can set volume, which is what
+/// stops a source hijacking a room where something downstream also has it. A Roku declares none
+/// and the commands are absent rather than present-and-ignored.
+#[test]
+fn volume_is_a_capability_of_the_box_not_of_the_room() {
+    let reg = ProxyRegistry::bundled().unwrap();
+    let mp = reg.get("media_player").unwrap();
+
+    let sonos = mp
+        .resolve(&caps(&[
+            ("has_discrete_volume", json!(true)),
+            ("has_mute", json!(true)),
+        ]))
+        .unwrap();
+    mp.validate_call(&sonos, "set_volume", &args(&[("level", json!(35))]))
+        .expect("a box with a volume knob takes set_volume");
+    mp.validate_call(&sonos, "set_mute", &args(&[("mute", json!(true))]))
+        .unwrap();
+
+    let roku = mp.resolve(&BTreeMap::new()).unwrap();
+    assert!(!roku.supports("set_volume"), "a streamer has no volume of its own");
+    assert!(
+        mp.validate_call(&roku, "set_volume", &args(&[("level", json!(35))]))
+            .is_err()
+    );
+}
+
 /// A player that never declared `has_browse` must not be able to emit results for it.
 #[test]
 fn undeclared_capabilities_do_not_leak_commands() {
