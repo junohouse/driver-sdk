@@ -39,6 +39,23 @@ pub enum HostCall {
     /// An HTTP request. Core owns the client so drivers cannot each ship their own, and so
     /// timeouts, retries, and TLS are enforced in one place.
     Http(HttpRequest),
+    /// Publish on this device's MQTT connection. Requires `[[transport]] kind = "mqtt"`.
+    ///
+    /// Core is the *client* here, never a broker: every MQTT device already is one or has one
+    /// beside it, and the topology is one connection per device with nothing shared. So this is
+    /// the same arrangement as [`Self::Tx`] — core owns the socket, the TLS and the reconnect —
+    /// with a topic instead of a stream position.
+    Publish { topic: String, payload: String },
+    /// Ask for a topic on this device's MQTT connection.
+    ///
+    /// Remembered by core and asked for again after a reconnect, because a subscription is state
+    /// held by the broker and the broker is the thing that just restarted. Subscribing twice to
+    /// the same topic is harmless and does nothing.
+    ///
+    /// A call rather than a manifest field because the topics that matter are rarely constant: a
+    /// panel answers on a topic named after the client id it issued during pairing, which nobody
+    /// knows when the manifest is written.
+    Subscribe { topic: String },
     /// Emit a proxy notification. Validated against the declared capabilities before it
     /// reaches anything else.
     Notify {
@@ -679,6 +696,9 @@ pub enum SetupStep {
         /// Where to connect. Required when opening, ignored when continuing.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         open: Option<Connect>,
+        /// Wait for the device to connect to *us* instead. See [`Accept`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        accept: Option<Accept>,
         /// Written before listening. Empty listens without sending, which is how you receive
         /// a greeting the device sends unprompted.
         #[serde(default)]
@@ -791,6 +811,44 @@ pub struct Connect {
     pub client_cert: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_key: Option<String>,
+}
+
+/// Wait for the device to connect to **us**, optionally saying so over mDNS.
+///
+/// The inverse of [`Connect`], and it is not a symmetry for its own sake: some pairing flows only
+/// happen inbound. A Qolsys panel pairs a touchscreen by scanning for a service, dialling it, and
+/// signing the certificate request it finds there — the panel is the client and the thing being
+/// paired is the server. A driver that could only dial out could never be paired at all.
+///
+/// Core owns the listener, the advertisement and the TLS, and tears all three down when the flow
+/// moves on. What arrives comes back in `input.received` and the connection stays open under the
+/// same `input.session` as any other, so the rest of the exchange is written exactly like an
+/// outbound one.
+///
+/// The driver never sees an address to guess at: `port` may be zero, core picks a free one, and
+/// the advertisement carries whichever it got.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Accept {
+    /// Service type to advertise while listening — `_http._tcp`. Empty advertises nothing, for a
+    /// device that already knows where to look.
+    #[serde(default)]
+    pub mdns_type: String,
+    /// Instance name within that type. The device is usually looking for an exact one.
+    #[serde(default)]
+    pub mdns_name: String,
+    /// 0 asks for any free port, which is what an advertised service should do — a fixed one is
+    /// a clash waiting for the second controller on the network.
+    #[serde(default)]
+    pub port: u16,
+    /// Present TLS. The certificate is ours to choose and the far side will not verify it: in
+    /// these flows it is about to *issue* us one.
+    #[serde(default)]
+    pub tls: bool,
+    /// PEM identity to present, both or neither. [`SetupStep::MakeIdentity`] makes one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cert: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 impl Connect {
