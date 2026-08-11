@@ -397,8 +397,10 @@ pub struct Discovery {
     pub sddp: Vec<crate::sddp::SddpMatch>,
     #[serde(default)]
     pub mac_oui: Vec<String>,
-    #[serde(default)]
-    pub http: Vec<BTreeMap<String, String>>,
+    // There was an `http` matcher here — a path to fetch and a string the body had to contain.
+    // Nothing ever read it: no controller implemented it and no manifest declared one, so it
+    // was a field the docs promised and the network never acted on. Asking a device a question
+    // to identify it is what `[[transport]] probe` does, and that one works.
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

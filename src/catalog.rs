@@ -42,9 +42,22 @@ pub struct Entry {
     /// back out of id prefixes and getting it wrong.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
-    /// `Juno-Certified-Drivers/sony-bravia-ip`. The provenance claim.
+    /// `junohouse/sony-bravia-ip`. The provenance claim.
     #[serde(default)]
     pub repo: String,
+    /// Whether [`Entry::repo`] can actually be read.
+    ///
+    /// Certification is a claim about where an artifact came from, and it holds whether or not
+    /// the source is public — but the catalog has been offering a "Source" link on every row,
+    /// which is a 404 the moment a driver ships from a private repo. Stated in the index so
+    /// the page knows without probing GitHub, and so a closed driver says so plainly rather
+    /// than by a link that fails.
+    ///
+    /// Absent means unstated, which reads as open: every row written before this field existed
+    /// came from a public repo. CI fills it in from the repo's actual visibility, so it cannot
+    /// drift from the truth the way a hand-set flag would.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<Source>,
     #[serde(default)]
     pub proxies: Vec<String>,
     #[serde(default)]
@@ -57,6 +70,21 @@ pub struct Entry {
     pub discovery: DiscoveryHints,
     #[serde(default)]
     pub versions: Vec<Release>,
+}
+
+/// Whether a driver's source can be read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Source {
+    Open,
+    Closed,
+}
+
+impl Source {
+    /// From a repository's visibility, which is the only thing that decides this.
+    pub fn from_private(private: bool) -> Self {
+        if private { Source::Closed } else { Source::Open }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
