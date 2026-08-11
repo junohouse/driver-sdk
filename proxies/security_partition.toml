@@ -1,0 +1,87 @@
+name = "security_partition"
+title = "Security Partition"
+category = "security"
+description = """
+One armable area of a security system. A panel with no partitions configured has exactly one.
+
+Separate from the panel, which is a `bridge`: the panel is a box on a wall that holds things, and
+what it holds is partitions and zones. Arming is per partition and always has been — a house with
+the garage on its own partition arms the garage at night and the rest of it at bedtime — so a
+contract that armed "the panel" could not say what the hardware already does.
+
+Zones are `sensor` bindings and are not part of this. A partition says whether an area is armed; a
+zone says whether a door is open, and an automation wants to trigger on exactly one of those.
+
+**There is no user code in this contract.** Panels want one to disarm, and the credential belongs
+to the installation rather than to the command: a code passed as an argument would be typed into a
+controls page in the clear, stored in whatever rule referenced it, and copied into every automation
+that disarms. Drivers hold it as a device property, like every other secret they carry. That also
+makes disarming look like unlocking a `lock`, which is the right comparison — both are "anyone who
+can reach this controller can open the house", and the answer to that is who can reach the
+controller, not an argument on one command.
+"""
+
+[capabilities]
+has_stay = { type = "bool", default = true, doc = "Can arm the perimeter and leave the interior live" }
+has_away = { type = "bool", default = true }
+has_panic = { type = "bool", default = false, doc = "An alarm can be raised from here" }
+
+[commands.arm_away]
+title = "Arm away"
+requires = "has_away"
+doc = "Arm everything, after the exit delay."
+params.instant = { type = "bool", optional = true, doc = "Skip the exit delay — armed the moment the panel accepts it" }
+params.bypass = { type = "bool", optional = true, doc = "Arm over zones that are open, rather than refusing" }
+
+[commands.arm_stay]
+title = "Arm stay"
+requires = "has_stay"
+doc = "Arm the perimeter with the interior live, for a house with people in it."
+params.instant = { type = "bool", optional = true }
+params.bypass = { type = "bool", optional = true }
+
+[commands.disarm]
+title = "Disarm"
+
+[commands.panic]
+title = "Raise an alarm"
+requires = "has_panic"
+doc = "Trip the alarm deliberately. Whether this reaches a monitoring station is the panel's business, not ours."
+params.kind = { type = "string", values = ["police", "fire", "auxiliary"] }
+
+[notifications.status_changed]
+title = "Armed or disarmed"
+doc = """
+Where the partition is now. One notification rather than one per transition, because a partition is
+always in exactly one of these and a rule almost always wants the transition *into* a state.
+"""
+params.status = { type = "string", values = [
+  "disarmed", "exit_delay", "entry_delay", "armed_stay", "armed_away", "alarm",
+] }
+params.seconds = { type = "u32", optional = true, doc = "How long the delay runs, while it is one" }
+params.detail = { type = "string", optional = true, doc = "What kind of alarm, when the status is `alarm`" }
+
+[notifications.code_required_changed]
+title = "Code needed to arm changed"
+doc = """
+Whether this partition insists on a code to *arm* it. Disarming always needs one.
+
+Shown rather than acted on, and it is a report rather than a capability because a panel's installer
+can change it from the keypad on a Tuesday — a capability is resolved when a device is adopted and
+would then be wrong until somebody re-adopted it.
+"""
+params.required = { type = "bool" }
+
+[notifications.online_changed]
+params.online = { type = "bool" }
+
+[state]
+status = { title = "Status", type = "string" }
+# Two booleans off one string, because "is it armed" and "is it going off" are the questions rules
+# and tiles ask, and every one of them arriving at its own idea of which statuses count as armed is
+# how a rule and a dashboard end up disagreeing about the same house.
+armed = { title = "Armed", type = "bool", one_of = { key = "status", values = ["armed_stay", "armed_away"] } }
+alarm = { title = "In alarm", type = "bool", one_of = { key = "status", values = ["alarm"] } }
+delay_seconds = { title = "Delay", type = "u32", from = "seconds" }
+code_required = { title = "Code needed to arm", type = "bool", from = "required" }
+online = { type = "bool" }

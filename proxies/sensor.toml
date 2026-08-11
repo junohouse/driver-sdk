@@ -20,7 +20,7 @@ bridge, so it is an action and not in any contract.
 """
 
 [capabilities]
-kind = { type = "string", default = "generic", doc = "temperature | humidity | motion | occupancy | door | window | water | smoke | co | lux | air_quality | power | generic" }
+kind = { type = "string", default = "generic", doc = "temperature | humidity | motion | occupancy | door | window | water | smoke | co | glass_break | lux | air_quality | power | generic" }
 unit = { type = "string", default = "", doc = "Display unit; empty for boolean sensors" }
 is_boolean   = { type = "bool", default = false, doc = "Reports detected/clear rather than a number" }
 value_min    = { type = "f32",  default = 0.0 }
