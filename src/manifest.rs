@@ -150,6 +150,31 @@ pub struct ProxyDecl {
 /// a device in the project uses a driver that declares one. There is no services page and
 /// nothing to remember to turn off, because a settings screen that can disagree with reality
 /// eventually will.
+/// What a driver is allowed to grow at runtime.
+///
+/// `[[proxy]]` is what a driver *is*; this is what it may turn out to have behind it. The two are
+/// different questions and only the first can be answered when the manifest is written: an alarm
+/// panel has as many zones as somebody programmed into it, a Zigbee coordinator has whatever
+/// joined the mesh last week.
+///
+/// It is a list rather than a flag because "this driver has children" is not a useful permission.
+/// A driver that can present anything can present a `lock`, and then a bug in a vendor's firmware
+/// parser — or a hostile answer from a device on the network — is a front door in somebody's
+/// project that no installer put there. The list is written by the driver author, checked against
+/// the registry at install, and enforced on every [`crate::HostCall::Present`] and every
+/// `Up::Present`: a kind that is not in it is dropped with a warning, not adopted.
+///
+/// So it is not a formality. `["sensor", "security_partition"]` is a security panel saying what
+/// it is for, and the day its driver tries to present a `lock` is the day somebody should be told
+/// rather than the day a door appears.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChildrenDecl {
+    /// Proxy contracts this driver may present. Everything else is refused.
+    #[serde(default)]
+    pub proxies: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AdapterDecl {
@@ -398,6 +423,9 @@ pub struct Manifest {
     /// Present if this driver is a separate process. See [`AdapterDecl`].
     #[serde(default)]
     pub adapter: Option<AdapterDecl>,
+    /// What this driver may find behind it at runtime. See [`ChildrenDecl`].
+    #[serde(default)]
+    pub children: Option<ChildrenDecl>,
 }
 
 /// Reject a driver id that could escape the directory it names.
@@ -450,6 +478,17 @@ impl Manifest {
     /// Whether this driver's devices must be attached to a bridge.
     pub fn needs_parent(&self) -> Option<&str> {
         self.driver.parent.as_deref()
+    }
+
+    /// Whether this driver may present a node of this kind. See [`ChildrenDecl`].
+    ///
+    /// A driver with no `[children]` block may present nothing at all, which is the right default
+    /// for the overwhelming majority: a television has no children, and a driver that grew some
+    /// by accident is a bug worth hearing about rather than a feature worth allowing.
+    pub fn may_present(&self, kind: &str) -> bool {
+        self.children
+            .as_ref()
+            .is_some_and(|c| c.proxies.iter().any(|p| p == kind))
     }
 
     /// The proxy the driver leads with — explicit `primary`, else the first declared.
@@ -531,6 +570,23 @@ impl Manifest {
 
         if self.proxy.is_empty() {
             errs.push("driver declares no [[proxy]] — it would control nothing".into());
+        }
+
+        // Checked here rather than when a node arrives, because the failure this prevents is a
+        // typo: `[children] proxies = ["sensors"]` refuses every zone the panel offers, at nine
+        // at night, with nothing in the log but "not allowed to present `sensor`".
+        if let Some(children) = &self.children {
+            if children.proxies.is_empty() {
+                errs.push(
+                    "[children] lists no proxies — remove the block, or say what may be presented"
+                        .into(),
+                );
+            }
+            for kind in &children.proxies {
+                if registry.get(kind).is_none() {
+                    errs.push(format!("[children]: `{kind}` is not a proxy in this core"));
+                }
+            }
         }
 
         let mut seen = BTreeSet::new();
@@ -694,6 +750,76 @@ mod id_tests {
     fn a_transport_without_a_probe_sweeps_nothing() {
         let m = manifest_with("roku.tv").unwrap();
         assert!(m.transport.iter().all(|t| t.probe.is_none()));
+    }
+
+    /// The default has to be "nothing", and a typo in the list has to be caught while somebody is
+    /// still looking at the manifest. Both, because they are the two ways this fails: silently
+    /// allowing everything, or silently allowing nothing at nine at night.
+    #[test]
+    fn a_driver_may_present_only_what_it_declared() {
+        let registry = crate::proxy::ProxyRegistry::bundled().expect("contracts load");
+
+        let plain = manifest_with("test.tv").unwrap();
+        assert!(
+            !plain.may_present("light"),
+            "a driver with no [children] may present nothing"
+        );
+
+        let hub = Manifest::parse(
+            r#"
+            [driver]
+            id = "test.panel"
+            name = "Panel"
+            version = "1.0.0"
+            runtime = "native"
+            [[proxy]]
+            id = 1
+            type = "bridge"
+            [children]
+            proxies = ["sensor", "security_partition"]
+            "#,
+        )
+        .expect("parses");
+        assert!(hub.may_present("sensor"));
+        assert!(!hub.may_present("lock"), "a lock is not on the list");
+        assert!(hub.validate(&registry).is_empty());
+
+        let typo = Manifest::parse(
+            r#"
+            [driver]
+            id = "test.panel"
+            name = "Panel"
+            version = "1.0.0"
+            runtime = "native"
+            [[proxy]]
+            id = 1
+            type = "bridge"
+            [children]
+            proxies = ["sensors"]
+            "#,
+        )
+        .expect("parses");
+        assert!(
+            typo.validate(&registry).iter().any(|e| e.contains("sensors")),
+            "a misspelled kind must be refused at install, not at the first inventory"
+        );
+
+        let empty = Manifest::parse(
+            r#"
+            [driver]
+            id = "test.panel"
+            name = "Panel"
+            version = "1.0.0"
+            runtime = "native"
+            [[proxy]]
+            id = 1
+            type = "bridge"
+            [children]
+            proxies = []
+            "#,
+        )
+        .expect("parses");
+        assert!(!empty.validate(&registry).is_empty(), "an empty list says nothing");
     }
 
     #[test]

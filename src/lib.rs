@@ -65,7 +65,7 @@ pub mod sddp;
 
 pub use host::{
     Args, Candidate, Connect, DeviceId, DriverModule, Field, HostCall, HttpRequest, ImportedAction,
-    ImportedRule, ImportedScene, Instance, PickRow, Request, Response, SetupStep, dispatch,
+    ImportedRule, ImportedScene, Instance, Node, PickRow, Request, Response, SetupStep, dispatch,
 };
 pub use serde_json::{Value, json};
 
