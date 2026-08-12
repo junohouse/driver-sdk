@@ -615,12 +615,23 @@ impl Package {
         }
         // Every compiled plugin staged beside the manifest — one per platform the driver was
         // built for, each naming its own.
-        for entry in std::fs::read_dir(dir)?.filter_map(std::result::Result::ok) {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if is_payload(&name) {
-                zip.start_file(&name, opts)?;
-                zip.write_all(&std::fs::read(entry.path())?)?;
-                wrote_payload = true;
+        //
+        // Only when a manifest actually asks for one. Packing a directory where somebody had
+        // previously run a host `cargo build` would otherwise sweep the leftover `.dylib` into
+        // a package that declares `wasm` — half a megabyte nothing will ever load, inside an
+        // archive whose whole claim is that it carries sandboxed code. `payload_for` picks by
+        // the declared runtime, so it installs and runs correctly and nobody finds out.
+        let wants_native = manifests
+            .iter()
+            .any(|m| m.driver.runtime == RuntimeKind::Native);
+        if wants_native {
+            for entry in std::fs::read_dir(dir)?.filter_map(std::result::Result::ok) {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if is_payload(&name) {
+                    zip.start_file(&name, opts)?;
+                    zip.write_all(&std::fs::read(entry.path())?)?;
+                    wrote_payload = true;
+                }
             }
         }
         if !wrote_payload {
