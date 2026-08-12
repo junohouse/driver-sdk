@@ -5,6 +5,7 @@
 //! and validation actually happen, so calling it is the check.
 
 use driver_sdk::proxy::ProxyRegistry;
+use driver_sdk::proxy::resolved::CallError;
 use driver_sdk::proxy::schema::ValueType;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -163,5 +164,72 @@ fn undeclared_capabilities_do_not_leak_commands() {
     assert!(
         mp.validate_call(&plain, "browse", &BTreeMap::new())
             .is_err()
+    );
+}
+
+/// A parameter's *choices* narrow per device, the way its range already did.
+///
+/// `hold {what}` is one command naming the key to hold rather than eight commands. Without a
+/// per-value gate that means every device advertises every key: an Apple TV over IR, which has
+/// arrows and no volume at all, would be offered `volume_up` — and `validate_call` would pass
+/// it to a driver whose only option is to refuse it.
+///
+/// This is `min_cap`/`max_cap` one type along, and for the same stated reason: never advertise
+/// something the hardware silently drops.
+#[test]
+fn a_value_is_offered_only_when_its_capability_is_declared() {
+    let registry = ProxyRegistry::bundled().unwrap();
+    let player = registry.get("media_player").expect("media_player exists");
+    let what = &player.commands["hold"].params["what"];
+
+    // An IR-only box: arrows, no volume, no scan.
+    let ir = caps(&[("has_hold", json!(true)), ("has_dpad", json!(true))]);
+    let allowed = what.allowed(&ir);
+    assert!(allowed.contains(&"up".to_string()));
+    assert!(
+        !allowed.contains(&"volume_up".to_string()),
+        "a box with no volume must not be offered a volume ramp: {allowed:?}"
+    );
+    assert!(
+        !allowed.contains(&"scan_forward".to_string()),
+        "nor a scan key it has no command for: {allowed:?}"
+    );
+
+    // The same contract on a box that does have volume.
+    let networked = caps(&[
+        ("has_hold", json!(true)),
+        ("has_dpad", json!(true)),
+        ("has_up_down_volume", json!(true)),
+    ]);
+    assert!(what.allowed(&networked).contains(&"volume_up".to_string()));
+}
+
+/// And the gate is enforced, not merely advertised. A caller that ignores the offered list —
+/// a rule written before a device was swapped, an assistant that guessed — is refused here
+/// rather than reaching a driver.
+#[test]
+fn holding_a_key_the_device_lacks_is_refused_with_the_ones_that_work() {
+    let registry = ProxyRegistry::bundled().unwrap();
+    let player = registry.get("media_player").expect("media_player exists");
+
+    let device = caps(&[("has_hold", json!(true)), ("has_dpad", json!(true))]);
+    let resolved = player.resolve(&device).expect("resolves");
+
+    match player.validate_call(&resolved, "hold", &args(&[("what", json!("volume_up"))])) {
+        Err(CallError::NotAllowed { allowed, got, .. }) => {
+            assert_eq!(got, "volume_up");
+            assert!(
+                allowed.contains(&"up".to_string()) && !allowed.contains(&"volume_up".to_string()),
+                "the refusal should name the keys that would have worked: {allowed:?}"
+            );
+        }
+        other => panic!("expected a refusal naming the usable keys, got {other:?}"),
+    }
+
+    // The key it does have still goes through.
+    assert!(
+        player
+            .validate_call(&resolved, "hold", &args(&[("what", json!("left"))]))
+            .is_ok()
     );
 }

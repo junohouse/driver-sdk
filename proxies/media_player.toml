@@ -149,13 +149,13 @@ same intent — somebody has their finger on a button — and this is where that
 Pairs with `keypad`'s `held` and `released`, which exist to bracket exactly this.
 
 `what` names the command being held rather than there being a `hold_volume_up`, a
-`hold_scan_forward` and six more. The cost is that it is not gated per key the way a command
-can be gated per capability: a player declaring `has_hold` accepts `hold {what = "scan_forward"}`
-even without `has_scan`. The driver refuses it — it is the only thing that knows — and the
-alternative was eight capabilities and sixteen commands to say one thing.
+`hold_scan_forward` and six more — and each key is gated by the capability that provides it, so
+a box is only ever offered the keys it has. An Apple TV over IR has arrows and no volume; the
+same television over its network link has both; neither has a scan key. All three are the same
+contract and none of them advertises a key it would only refuse.
 """
 requires = "has_hold"
-params.what = { type = "string", values = ["volume_up", "volume_down", "scan_forward", "scan_reverse", "up", "down", "left", "right"] }
+params.what = { type = "string", values = ["volume_up", "volume_down", "scan_forward", "scan_reverse", "up", "down", "left", "right"], values_require = { volume_up = "has_up_down_volume", volume_down = "has_up_down_volume", scan_forward = "has_scan", scan_reverse = "has_scan", up = "has_dpad", down = "has_dpad", left = "has_dpad", right = "has_dpad" } }
 
 [commands.release]
 doc = """

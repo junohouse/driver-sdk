@@ -58,7 +58,7 @@ ramp — see the same pair on `media_player`, which this mirrors so a room does 
 which of the two is carrying its volume.
 """
 requires = "has_hold"
-params.what = { type = "string", values = ["volume_up", "volume_down"] }
+params.what = { type = "string", values = ["volume_up", "volume_down"], values_require = { volume_up = "has_volume", volume_down = "has_volume" } }
 
 [commands.release]
 doc = "Stop holding. Takes no argument: one key is held at a time."
