@@ -22,6 +22,7 @@
 use crate::manifest::{Manifest, Runtime as RuntimeKind};
 use crate::proxy::ProxyRegistry;
 use anyhow::{Context, Result, bail};
+use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -147,6 +148,103 @@ pub fn lib_name(dir: &Path) -> Option<String> {
     )
 }
 
+/// The file in the archive that one manifest's runtime needs, and its bytes.
+///
+/// The payload has to match what the manifest claims, or a `declarative` driver could ship a
+/// binary and get it loaded. Checked per manifest rather than once for the package, so a mixed
+/// package is held to the same rule for each driver in it rather than to the lead's rule for
+/// all of them.
+fn payload_for<R: Read + std::io::Seek>(
+    zip: &mut zip::ZipArchive<R>,
+    manifest: &Manifest,
+) -> Result<(String, Vec<u8>)> {
+    let wanted: &[&str] = match manifest.driver.runtime {
+        RuntimeKind::Declarative => &["commands.toml"],
+        RuntimeKind::Wasm => &["driver.wasm"],
+        RuntimeKind::Python => &["driver.py"],
+        // Named per platform inside the archive, and resolved below — one package
+        // carries every platform it was built for.
+        RuntimeKind::Native => &[],
+        // Nothing to carry, and a package claiming otherwise is asking for code that does
+        // not exist. `builtin` means core registers the driver itself — the virtual devices
+        // behind `run --demo` — so an archive declaring one is either a mistake or an
+        // attempt to have a payload loaded under a name that skips the payload checks.
+        RuntimeKind::Builtin => {
+            bail!(
+                "{} declares `runtime = \"builtin\"`, which is core's own — a package \
+                 cannot carry one",
+                manifest.driver.id
+            );
+        }
+        // Nothing. Not "resolved below" like a native plugin, but genuinely nothing: an
+        // adapter has no in-process code, and the thing that runs is the `exec` in its
+        // `[adapter]` table against the package's own tree. Demanding a payload here is how
+        // an adapter fails to package with a message about a missing file.
+        RuntimeKind::Adapter => &[],
+    };
+
+    let mut payload_name = String::new();
+    let mut payload = Vec::new();
+    for name in wanted {
+        if let Ok(mut f) = zip.by_name(name) {
+            payload_name = (*name).to_string();
+            f.read_to_end(&mut payload)?;
+            break;
+        }
+    }
+    // A native plugin is platform-specific. A package may carry several — one per
+    // platform — so take the one this machine can actually load rather than the first
+    // one in the archive, which is how a macOS build ends up being handed to Linux.
+    if payload.is_empty() && manifest.driver.runtime == RuntimeKind::Native {
+        let ours = platform_payload();
+        let names: Vec<String> = (0..zip.len())
+            .filter_map(|i| {
+                let n = zip.by_index(i).ok()?.name().to_string();
+                is_payload(&n).then_some(n)
+            })
+            .collect();
+
+        match names.iter().find(|n| **n == ours) {
+            Some(n) => {
+                let n = n.clone();
+                zip.by_name(&n)?.read_to_end(&mut payload)?;
+                payload_name = n;
+            }
+            None => {
+                if !names.is_empty() {
+                    // Naming what it *does* have is the whole point: "no build for your
+                    // platform" sends someone looking at their controller, when the answer
+                    // is that the driver's CI does not build for it yet.
+                    //
+                    // This refuses the whole package, including any declarative driver beside
+                    // the native one. Deliberate: a package is one product, and installing the
+                    // half of an Apple TV that does IR while silently dropping the half that
+                    // does everything else is a worse thing to hand somebody than a clear
+                    // refusal naming the missing build.
+                    bail!(
+                        "{} has no build for this machine: it needs `{ours}` and the \
+                         package carries {}",
+                        manifest.driver.id,
+                        names.join(", ")
+                    );
+                }
+            }
+        }
+    }
+    // An adapter is the one runtime with nothing to load here, so an empty payload is
+    // correct rather than missing. Everything else that reaches this point asked for a file
+    // and did not get it.
+    if payload.is_empty() && manifest.driver.runtime != RuntimeKind::Adapter {
+        bail!(
+            "{} declares runtime `{:?}` but the archive has no {}",
+            manifest.driver.id,
+            manifest.driver.runtime,
+            wanted.join(" or ")
+        );
+    }
+    Ok((payload_name, payload))
+}
+
 /// Every compiled payload in a package, whatever platform it was built for.
 pub fn is_payload(name: &str) -> bool {
     name.starts_with("driver-")
@@ -161,11 +259,18 @@ pub fn is_payload(name: &str) -> bool {
 #[derive(Debug, Clone)]
 pub struct Package {
     pub manifest: Manifest,
-    /// Additional drivers in the same package, sharing the one payload.
+    /// Additional drivers in the same package.
     pub extra: Vec<Manifest>,
-    /// The payload file's name inside the archive, and its bytes.
+    /// The lead driver's payload: its name inside the archive, and its bytes.
     pub payload_name: String,
     pub payload: Vec<u8>,
+    /// Every driver's payload, by driver id — including the lead's.
+    ///
+    /// Usually all the same file, because a package usually has one runtime. It is keyed per
+    /// driver so that one package can carry the same hardware reached two ways: an Apple TV is
+    /// a native plugin over its Companion link and a `commands.toml` of IR codes over an
+    /// emitter, and those want to be one product rather than two entries in a catalog.
+    pub payloads: BTreeMap<String, (String, Vec<u8>)>,
     pub readme: Option<String>,
     /// Where the archive came from, when it was a file.
     pub source: Option<PathBuf>,
@@ -226,86 +331,22 @@ impl Package {
         let manifest = manifests.remove(lead);
         let extra = manifests;
 
-        // The payload has to match what the manifest claims, or a `declarative` driver could
-        // ship a binary and get it loaded.
-        let wanted: &[&str] = match manifest.driver.runtime {
-            RuntimeKind::Declarative => &["commands.toml"],
-            RuntimeKind::Wasm => &["driver.wasm"],
-            RuntimeKind::Python => &["driver.py"],
-            // Named per platform inside the archive, and resolved below — one package
-            // carries every platform it was built for.
-            RuntimeKind::Native => &[],
-            // Nothing to carry, and a package claiming otherwise is asking for code that does
-            // not exist. `builtin` means core registers the driver itself — the virtual devices
-            // behind `run --demo` — so an archive declaring one is either a mistake or an
-            // attempt to have a payload loaded under a name that skips the payload checks.
-            RuntimeKind::Builtin => {
-                bail!(
-                    "{} declares `runtime = \"builtin\"`, which is core's own — a package \
-                     cannot carry one",
-                    manifest.driver.id
-                );
-            }
-            // Nothing. Not "resolved below" like a native plugin, but genuinely nothing: an
-            // adapter has no in-process code, and the thing that runs is the `exec` in its
-            // `[adapter]` table against the package's own tree. Demanding a payload here is how
-            // an adapter fails to package with a message about a missing file.
-            RuntimeKind::Adapter => &[],
-        };
-
-        let mut payload_name = String::new();
-        let mut payload = Vec::new();
-        for name in wanted {
-            if let Ok(mut f) = zip.by_name(name) {
-                payload_name = (*name).to_string();
-                f.read_to_end(&mut payload)?;
-                break;
-            }
+        // One payload per driver, not one per package.
+        //
+        // A package almost always has a single runtime and every driver in it shares the one
+        // file. The exception is the same hardware reachable two ways: an Apple TV is a native
+        // driver over its Companion link and a `commands.toml` of IR codes over an emitter, and
+        // those are one product, one catalog entry, one thing to certify. Resolving per manifest
+        // is also what lets the loader skip a runtime nobody adopted — an IR-only house never
+        // maps the native plugin.
+        let mut payloads = BTreeMap::new();
+        for m in std::iter::once(&manifest).chain(extra.iter()) {
+            payloads.insert(m.driver.id.clone(), payload_for(&mut zip, m)?);
         }
-        // A native plugin is platform-specific. A package may carry several — one per
-        // platform — so take the one this machine can actually load rather than the first
-        // one in the archive, which is how a macOS build ends up being handed to Linux.
-        if payload.is_empty() && manifest.driver.runtime == RuntimeKind::Native {
-            let ours = platform_payload();
-            let names: Vec<String> = (0..zip.len())
-                .filter_map(|i| {
-                    let n = zip.by_index(i).ok()?.name().to_string();
-                    is_payload(&n).then_some(n)
-                })
-                .collect();
-
-            match names.iter().find(|n| **n == ours) {
-                Some(n) => {
-                    let n = n.clone();
-                    zip.by_name(&n)?.read_to_end(&mut payload)?;
-                    payload_name = n;
-                }
-                None => {
-                    if !names.is_empty() {
-                        // Naming what it *does* have is the whole point: "no build for your
-                        // platform" sends someone looking at their controller, when the answer
-                        // is that the driver's CI does not build for it yet.
-                        bail!(
-                            "{} has no build for this machine: it needs `{ours}` and the \
-                             package carries {}",
-                            manifest.driver.id,
-                            names.join(", ")
-                        );
-                    }
-                }
-            }
-        }
-        // An adapter is the one runtime with nothing to load here, so an empty payload is
-        // correct rather than missing. Everything else that reaches this point asked for a file
-        // and did not get it.
-        if payload.is_empty() && manifest.driver.runtime != RuntimeKind::Adapter {
-            bail!(
-                "{} declares runtime `{:?}` but the archive has no {}",
-                manifest.driver.id,
-                manifest.driver.runtime,
-                wanted.join(" or ")
-            );
-        }
+        let (payload_name, payload) = payloads
+            .get(&manifest.driver.id)
+            .cloned()
+            .unwrap_or_default();
 
         let mut readme = String::new();
         if let Ok(mut f) = zip.by_name("docs/README.md") {
@@ -317,6 +358,7 @@ impl Package {
             extra,
             payload_name,
             payload,
+            payloads,
             readme: (!readme.is_empty()).then_some(readme),
             source: None,
         })
