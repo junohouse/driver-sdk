@@ -558,6 +558,14 @@ impl Package {
                     zip.write_all(&std::fs::read(&p)?)?;
                 }
             }
+            // Adapter packages return from this branch because their source tree is the
+            // payload. Keep the documentation in the same canonical archive path as native
+            // packages, otherwise the configurator has the README file but no Docs tab.
+            let readme = dir.join("README.md");
+            if readme.exists() {
+                zip.start_file("docs/README.md", opts)?;
+                zip.write_all(&std::fs::read(readme)?)?;
+            }
             zip.finish()?;
             return Ok(path);
         }
