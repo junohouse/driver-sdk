@@ -1,5 +1,4 @@
 name = "light"
-version = 1
 title = "Light"
 category = "lighting"
 description = "A controllable light load — switched, dimmed, tunable, or full colour."

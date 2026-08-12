@@ -150,6 +150,31 @@ pub struct ProxyDecl {
 /// a device in the project uses a driver that declares one. There is no services page and
 /// nothing to remember to turn off, because a settings screen that can disagree with reality
 /// eventually will.
+/// What a driver is allowed to grow at runtime.
+///
+/// `[[proxy]]` is what a driver *is*; this is what it may turn out to have behind it. The two are
+/// different questions and only the first can be answered when the manifest is written: an alarm
+/// panel has as many zones as somebody programmed into it, a Zigbee coordinator has whatever
+/// joined the mesh last week.
+///
+/// It is a list rather than a flag because "this driver has children" is not a useful permission.
+/// A driver that can present anything can present a `lock`, and then a bug in a vendor's firmware
+/// parser — or a hostile answer from a device on the network — is a front door in somebody's
+/// project that no installer put there. The list is written by the driver author, checked against
+/// the registry at install, and enforced on every [`crate::HostCall::Present`] and every
+/// `Up::Present`: a kind that is not in it is dropped with a warning, not adopted.
+///
+/// So it is not a formality. `["sensor", "security_partition"]` is a security panel saying what
+/// it is for, and the day its driver tries to present a `lock` is the day somebody should be told
+/// rather than the day a door appears.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChildrenDecl {
+    /// Proxy contracts this driver may present. Everything else is refused.
+    #[serde(default)]
+    pub proxies: Vec<String>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AdapterDecl {
@@ -299,6 +324,19 @@ pub struct TransportDecl {
     pub discovery: String,
     #[serde(default)]
     pub keepalive: bool,
+    /// This connection carries framed bytes, not lines of text.
+    ///
+    /// Set it and reads come back as `rx { bytes }` — a JSON array — with core doing no framing
+    /// at all, because it cannot know where one message ends. Leave it unset and reads come back
+    /// as `rx { data }`, line-oriented and UTF-8, which is right for telnet, for SSE and for
+    /// every driver that has needed this so far.
+    ///
+    /// It has to be declared rather than inferred. A binary frame read down the text path is cut
+    /// at the first `0x0A` inside its length prefix and has every non-UTF-8 byte replaced, and
+    /// neither is detectable afterwards — the driver receives something that decodes to
+    /// plausible nonsense. Guessing wrong in that direction is worse than saying so here.
+    #[serde(default)]
+    pub binary: bool,
     /// Wrap the connection in mutual TLS — a client certificate property must be set on the
     /// device (or inherited from its bridge) or the connection is refused.
     #[serde(default)]
@@ -345,6 +383,18 @@ pub struct PropertyDecl {
     pub values: Vec<String>,
     #[serde(default)]
     pub unit: String,
+    /// The device cannot work until somebody sets this.
+    ///
+    /// For the ones with no sensible default and no way to discover them — a Sonos API key, an
+    /// account name a driver cannot invent. Distinct from merely having no `default`: plenty
+    /// of properties are optional and blank, and a screen that flagged all of them would flag
+    /// nothing.
+    ///
+    /// Advisory, and the driver still checks. This says what an installer must be told, not
+    /// what the controller enforces — a driver that assumes core blocked an empty value is one
+    /// that panics the day somebody edits the project file by hand.
+    #[serde(default)]
+    pub required: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -360,8 +410,10 @@ pub struct Discovery {
     pub sddp: Vec<crate::sddp::SddpMatch>,
     #[serde(default)]
     pub mac_oui: Vec<String>,
-    #[serde(default)]
-    pub http: Vec<BTreeMap<String, String>>,
+    // There was an `http` matcher here — a path to fetch and a string the body had to contain.
+    // Nothing ever read it: no controller implemented it and no manifest declared one, so it
+    // was a field the docs promised and the network never acted on. Asking a device a question
+    // to identify it is what `[[transport]] probe` does, and that one works.
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -386,6 +438,9 @@ pub struct Manifest {
     /// Present if this driver is a separate process. See [`AdapterDecl`].
     #[serde(default)]
     pub adapter: Option<AdapterDecl>,
+    /// What this driver may find behind it at runtime. See [`ChildrenDecl`].
+    #[serde(default)]
+    pub children: Option<ChildrenDecl>,
 }
 
 /// Reject a driver id that could escape the directory it names.
@@ -438,6 +493,17 @@ impl Manifest {
     /// Whether this driver's devices must be attached to a bridge.
     pub fn needs_parent(&self) -> Option<&str> {
         self.driver.parent.as_deref()
+    }
+
+    /// Whether this driver may present a node of this kind. See [`ChildrenDecl`].
+    ///
+    /// A driver with no `[children]` block may present nothing at all, which is the right default
+    /// for the overwhelming majority: a television has no children, and a driver that grew some
+    /// by accident is a bug worth hearing about rather than a feature worth allowing.
+    pub fn may_present(&self, kind: &str) -> bool {
+        self.children
+            .as_ref()
+            .is_some_and(|c| c.proxies.iter().any(|p| p == kind))
     }
 
     /// The proxy the driver leads with — explicit `primary`, else the first declared.
@@ -519,6 +585,23 @@ impl Manifest {
 
         if self.proxy.is_empty() {
             errs.push("driver declares no [[proxy]] — it would control nothing".into());
+        }
+
+        // Checked here rather than when a node arrives, because the failure this prevents is a
+        // typo: `[children] proxies = ["sensors"]` refuses every zone the panel offers, at nine
+        // at night, with nothing in the log but "not allowed to present `sensor`".
+        if let Some(children) = &self.children {
+            if children.proxies.is_empty() {
+                errs.push(
+                    "[children] lists no proxies — remove the block, or say what may be presented"
+                        .into(),
+                );
+            }
+            for kind in &children.proxies {
+                if registry.get(kind).is_none() {
+                    errs.push(format!("[children]: `{kind}` is not a proxy in this core"));
+                }
+            }
         }
 
         let mut seen = BTreeSet::new();
@@ -682,6 +765,76 @@ mod id_tests {
     fn a_transport_without_a_probe_sweeps_nothing() {
         let m = manifest_with("roku.tv").unwrap();
         assert!(m.transport.iter().all(|t| t.probe.is_none()));
+    }
+
+    /// The default has to be "nothing", and a typo in the list has to be caught while somebody is
+    /// still looking at the manifest. Both, because they are the two ways this fails: silently
+    /// allowing everything, or silently allowing nothing at nine at night.
+    #[test]
+    fn a_driver_may_present_only_what_it_declared() {
+        let registry = crate::proxy::ProxyRegistry::bundled().expect("contracts load");
+
+        let plain = manifest_with("test.tv").unwrap();
+        assert!(
+            !plain.may_present("light"),
+            "a driver with no [children] may present nothing"
+        );
+
+        let hub = Manifest::parse(
+            r#"
+            [driver]
+            id = "test.panel"
+            name = "Panel"
+            version = "1.0.0"
+            runtime = "native"
+            [[proxy]]
+            id = 1
+            type = "bridge"
+            [children]
+            proxies = ["sensor", "security_partition"]
+            "#,
+        )
+        .expect("parses");
+        assert!(hub.may_present("sensor"));
+        assert!(!hub.may_present("lock"), "a lock is not on the list");
+        assert!(hub.validate(&registry).is_empty());
+
+        let typo = Manifest::parse(
+            r#"
+            [driver]
+            id = "test.panel"
+            name = "Panel"
+            version = "1.0.0"
+            runtime = "native"
+            [[proxy]]
+            id = 1
+            type = "bridge"
+            [children]
+            proxies = ["sensors"]
+            "#,
+        )
+        .expect("parses");
+        assert!(
+            typo.validate(&registry).iter().any(|e| e.contains("sensors")),
+            "a misspelled kind must be refused at install, not at the first inventory"
+        );
+
+        let empty = Manifest::parse(
+            r#"
+            [driver]
+            id = "test.panel"
+            name = "Panel"
+            version = "1.0.0"
+            runtime = "native"
+            [[proxy]]
+            id = 1
+            type = "bridge"
+            [children]
+            proxies = []
+            "#,
+        )
+        .expect("parses");
+        assert!(!empty.validate(&registry).is_empty(), "an empty list says nothing");
     }
 
     #[test]

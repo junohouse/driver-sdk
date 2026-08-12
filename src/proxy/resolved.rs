@@ -248,14 +248,19 @@ fn check_param(
         }
     }
 
-    if !spec.values.is_empty()
+    // Narrowed to what *this* device accepts, not what the contract lists. A key gated behind a
+    // capability the device does not declare is refused here rather than being passed to a
+    // driver whose only option is to refuse it less clearly — and the error names the values
+    // that would have worked, which is the difference between a retry and a dead end.
+    let allowed = spec.allowed(caps);
+    if !allowed.is_empty()
         && let Some(s) = v.as_str()
-        && !spec.values.iter().any(|a| a == s)
+        && !allowed.iter().any(|a| a == s)
     {
         return Err(CallError::NotAllowed {
             param: name.to_string(),
             got: s.to_string(),
-            allowed: spec.values.clone(),
+            allowed,
         });
     }
 

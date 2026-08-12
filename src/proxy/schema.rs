@@ -16,6 +16,14 @@ pub enum ValueType {
     StringList,
     /// Opaque bytes. Carried as a hex string on the wire; used only by transport proxies.
     Bytes,
+    /// A structure the contract deliberately does not describe: a page of browse results, a
+    /// search hit list. Every other type exists so a control can be drawn and an argument
+    /// checked without reading the driver — this one exists for payloads whose shape belongs
+    /// to a music service rather than to us, and which are rendered as a list either way.
+    ///
+    /// Arrays and objects only. Allowing scalars would make `json` a synonym for "any" and
+    /// take the rest of the contract's validation down with it.
+    Json,
 }
 
 impl ValueType {
@@ -37,6 +45,7 @@ impl ValueType {
             (ValueType::F32, Value::Number(_)) => true,
             (ValueType::String | ValueType::Bytes, Value::String(_)) => true,
             (ValueType::StringList, Value::Array(a)) => a.iter().all(Value::is_string),
+            (ValueType::Json, Value::Array(_) | Value::Object(_)) => true,
             _ => false,
         }
     }
@@ -71,6 +80,20 @@ pub struct Param {
     /// proxy's. Otherwise we advertise a range the hardware silently clamps.
     pub min_cap: Option<String>,
     pub max_cap: Option<String>,
+    /// Capability gating individual entries of `values`, for a parameter whose *choices* vary by
+    /// device rather than whose range does.
+    ///
+    /// The same argument as `min_cap`/`max_cap` one type along. `hold` takes a key to hold, and
+    /// the keys a box has are not the same box to box: an Apple TV over IR has arrows and no
+    /// volume, the same television over its network link has both, and neither has a scan key.
+    /// Without this the parameter advertises every value to every device — so the assistant is
+    /// told an IR-only television can ramp its volume, and `validate_call` waves the attempt
+    /// through to a driver that can only refuse it.
+    ///
+    /// A value with no entry here is always allowed. Naming a capability the proxy does not
+    /// declare is a validation error, not a silently-never-allowed value.
+    #[serde(default)]
+    pub values_require: BTreeMap<String, String>,
     /// State key holding this parameter's valid values, when they are discovered from the
     /// device rather than fixed in the contract. A Roku's installed apps are not knowable
     /// when the proxy is written, but the assistant still has to be told what it can ask for.
@@ -91,6 +114,25 @@ impl Param {
             from_cap(&self.min_cap).or(self.min),
             from_cap(&self.max_cap).or(self.max),
         )
+    }
+
+    /// The values *this* device accepts: the contract's list, minus any whose capability it
+    /// does not declare.
+    ///
+    /// Empty in, empty out — a parameter with no fixed list is unconstrained and stays that way.
+    pub fn allowed(&self, caps: &BTreeMap<String, Value>) -> Vec<String> {
+        if self.values_require.is_empty() {
+            return self.values.clone();
+        }
+        self.values
+            .iter()
+            .filter(|v| match self.values_require.get(*v) {
+                // Ungated values are always offered.
+                None => true,
+                Some(cap) => caps.get(cap).and_then(Value::as_bool) == Some(true),
+            })
+            .cloned()
+            .collect()
     }
 }
 
@@ -192,7 +234,6 @@ impl StateField {
 #[serde(deny_unknown_fields)]
 pub struct Proxy {
     pub name: String,
-    pub version: u32,
     pub title: String,
     #[serde(default)]
     pub category: String,
@@ -254,6 +295,26 @@ impl Proxy {
                     }
                     if !p.values.is_empty() && p.ty != ValueType::String {
                         errs.push(format!("{where_}: `values` is only valid on a string"));
+                    }
+                    // A gate on a value that is not offered, or on a capability that does not
+                    // exist, silently never fires — so the parameter looks narrowed and is not.
+                    for (value, cap) in &p.values_require {
+                        if !p.values.iter().any(|v| v == value) {
+                            errs.push(format!(
+                                "{where_}: `values_require` names `{value}`, which is not in \
+                                 `values`"
+                            ));
+                        }
+                        match self.capabilities.get(cap) {
+                            None => errs.push(format!(
+                                "{where_}: `{value}` requires unknown capability `{cap}`"
+                            )),
+                            Some(c) if c.ty != ValueType::Bool => errs.push(format!(
+                                "{where_}: `{value}` requires `{cap}`, which is {:?}, not bool",
+                                c.ty
+                            )),
+                            Some(_) => {}
+                        }
                     }
                 }
             }

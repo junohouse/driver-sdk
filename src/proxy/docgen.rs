@@ -24,17 +24,24 @@ fn ty(t: ValueType) -> &'static str {
         ValueType::String => "string",
         ValueType::StringList => "string[]",
         ValueType::Bytes => "bytes",
+        ValueType::Json => "json",
     }
 }
 
 fn param_cell(p: &Param) -> String {
     let mut s = format!("`{}`", ty(p.ty));
     if !p.values.is_empty() {
+        // A gated value is annotated with what it needs. Without this the reference reads as
+        // though every device takes every value, which is exactly the thing the gate exists to
+        // stop somebody believing.
         s = format!(
             "one of {}",
             p.values
                 .iter()
-                .map(|v| format!("`{v}`"))
+                .map(|v| match p.values_require.get(v) {
+                    Some(cap) => format!("`{v}` *(needs `{cap}`)*"),
+                    None => format!("`{v}`"),
+                })
                 .collect::<Vec<_>>()
                 .join(" · ")
         );
@@ -81,7 +88,7 @@ fn signatures(out: &mut String, heading: &str, sigs: &BTreeMap<String, Signature
 pub fn render(p: &Proxy) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "{BANNER}\n");
-    let _ = writeln!(out, "# {} — `{}` v{}\n", p.title, p.name, p.version);
+    let _ = writeln!(out, "# {} — `{}`\n", p.title, p.name);
     if !p.description.is_empty() {
         let _ = writeln!(out, "{}\n", p.description.trim());
     }

@@ -30,6 +30,19 @@ name = "junodrv"
 path = "src/bin/junodrv.rs"
 required-features = ["pack"]
 
+# `package` only exists behind `pack`, so the test that exercises it only builds behind `pack`.
+# Without this, a plain `cargo test` fails to compile a file that could never have worked.
+[[test]]
+name = "package"
+required-features = ["pack"]
+
+# The contracts are only parsed when something loads them, so this is the only thing that
+# reads `proxies/*.toml` in the test run. `cargo test` alone compiles no features and would
+# skip it silently — CI runs `cargo test --all-features`.
+[[test]]
+name = "proxies"
+required-features = ["contracts"]
+
 [features]
 default = []
 # The proxy contracts and the manifest format: everything needed to check that a driver

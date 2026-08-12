@@ -1,5 +1,4 @@
 name = "media_player"
-version = 1
 title = "Media Player"
 category = "av"
 description = """
@@ -17,8 +16,40 @@ has_browse         = { type = "bool", default = false, doc = "Content can be lis
 has_search         = { type = "bool", default = false }
 has_playlists      = { type = "bool", default = false }
 has_shuffle_repeat = { type = "bool", default = false }
+has_crossfade      = { type = "bool", default = false, doc = "Blends the end of one track into the next" }
+# Whether this box has a volume knob of its own — not whether it is the one a room should use.
+#
+# A Sonos Amp driving speakers is a room's volume; the same Amp feeding a receiver is not, and
+# neither the driver nor the manifest can know which it is. The pathfinder decides: it takes the
+# sink-most thing on the solved path that can set one, so a source declaring volume never
+# hijacks a room where something downstream also has it. Declare what the hardware has and let
+# the wiring answer the other question.
+has_discrete_volume = { type = "bool", default = false }
+has_up_down_volume  = { type = "bool", default = false }
+has_mute            = { type = "bool", default = false }
+volume_max          = { type = "u32",  default = 100 }
+has_queue          = { type = "bool", default = false, doc = "Content can be queued rather than only played now" }
 has_dpad           = { type = "bool", default = false, doc = "Cursor navigation for an on-screen UI" }
+has_hold           = { type = "bool", default = false, doc = """
+A key can be held down and later released, rather than only tapped. See `hold`.
+
+Separate from the commands it holds because the two really do come apart: an IR emitter can
+ramp anything it has a code for, and a box reached over HTTP one request at a time can ramp
+nothing at all however many keys it has.
+""" }
 has_apps           = { type = "bool", default = false, doc = "Installed applications can be listed and launched" }
+has_deep_link      = { type = "bool", default = false, doc = """
+`launch_app` can open a *particular title*, not just the app.
+
+Separate from `has_apps` because the two come apart in both directions and the difference is
+invisible from outside: a Roku set to Limited control still launches channels and a tvOS app
+that dropped its deep links still opens. Without this, `content_id` is a parameter every
+app-capable driver accepts and some silently ignore — so "play Severance" reports success and
+leaves somebody on a home screen.
+
+Whoever is resolving a title reads this to decide whether to bother looking one up, and to
+tell a person the truth when the answer is no.
+""" }
 has_number_keys    = { type = "bool", default = false }
 is_video_source    = { type = "bool", default = false }
 is_audio_source    = { type = "bool", default = true }
@@ -49,18 +80,93 @@ params.shuffle = { type = "bool" }
 requires = "has_shuffle_repeat"
 params.mode = { type = "string", values = ["off", "one", "all"] }
 
+[commands.set_crossfade]
+requires = "has_crossfade"
+params.crossfade = { type = "bool" }
+
+[commands.set_volume]
+requires = "has_discrete_volume"
+params.level = { type = "u32", min = 0, max = 100, max_cap = "volume_max" }
+
+[commands.volume_up]
+requires = "has_up_down_volume"
+[commands.volume_down]
+requires = "has_up_down_volume"
+
+[commands.set_mute]
+requires = "has_mute"
+params.mute = { type = "bool" }
+
+[commands.mute_toggle]
+requires = "has_mute"
+
 [commands.play_item]
 doc = "Play a content id previously returned by browse or search"
 requires = "has_browse"
 params.id = { type = "string" }
+params.queue_action = { type = "string", optional = true, values = ["now", "next", "append", "replace"], doc = """
+What to do with the queue. Absent means `now`, which is the only thing a player without
+`has_queue` can do — and why this is optional rather than gated: `requires` lives on a command,
+not a parameter, so a queueless player ignores it rather than being unable to receive it.
+""" }
+params.shuffle = { type = "bool", optional = true, doc = """
+Set shuffle as part of loading, rather than as a second command that races the first. "Shuffle
+my Discover Weekly" is one intent and every service treats it as one call.
+""" }
+
+[commands.browse]
+doc = """
+List what is under `node`. Results do not come back from this call — a command cannot return —
+they arrive as `browse_results` carrying the same `token`.
+"""
+requires = "has_browse"
+params.token  = { type = "string", optional = true, doc = "Echoed back on the matching `browse_results`" }
+params.node   = { type = "string", optional = true, doc = "A container id from an earlier result. Absent means the root." }
+params.offset = { type = "u32", optional = true }
+params.limit  = { type = "u32", optional = true }
 
 [commands.search]
 requires = "has_search"
+# Optional, and it has to be: a Roku declares `has_search` and answers it by opening its own
+# search screen, taking neither a token nor a query. A required parameter here would break
+# every driver that already implements this command.
+params.token = { type = "string", optional = true, doc = "Echoed back on the matching `search_results`" }
 params.query = { type = "string" }
 
 [commands.dpad]
 requires = "has_dpad"
 params.key = { type = "string", values = ["up", "down", "left", "right", "select", "back", "menu", "home", "info"] }
+
+[commands.hold]
+doc = """
+Begin holding a key down, and keep holding it until `release`.
+
+The difference between a step and a ramp. Sending `volume_up` forty times is not the same
+thing as holding it: an IR emitter has to keep the carrier up rather than re-send a frame, and
+a box on the network wants a press with no release rather than forty presses. Both are the
+same intent — somebody has their finger on a button — and this is where that intent goes.
+
+Pairs with `keypad`'s `held` and `released`, which exist to bracket exactly this.
+
+`what` names the command being held rather than there being a `hold_volume_up`, a
+`hold_scan_forward` and six more — and each key is gated by the capability that provides it, so
+a box is only ever offered the keys it has. An Apple TV over IR has arrows and no volume; the
+same television over its network link has both; neither has a scan key. All three are the same
+contract and none of them advertises a key it would only refuse.
+"""
+requires = "has_hold"
+params.what = { type = "string", values = ["volume_up", "volume_down", "scan_forward", "scan_reverse", "up", "down", "left", "right"], values_require = { volume_up = "has_up_down_volume", volume_down = "has_up_down_volume", scan_forward = "has_scan", scan_reverse = "has_scan", up = "has_dpad", down = "has_dpad", left = "has_dpad", right = "has_dpad" } }
+
+[commands.release]
+doc = """
+Stop holding whatever `hold` started. Takes no argument: one thing is held at a time, because
+one finger is on one button, and a release that had to name its key would be a way to get them
+out of step.
+
+A driver is expected to release on its own if the connection drops mid-hold. A stuck ramp is
+worse than a lost one — it runs the volume to the top of its range with nobody touching it.
+"""
+requires = "has_hold"
 
 [notifications.transport_changed]
 params.state = { type = "string", values = ["playing", "paused", "stopped", "buffering"] }
@@ -77,11 +183,55 @@ params.duration_ms = { type = "u32", optional = true }
 requires = "has_seek"
 params.position_ms = { type = "u32" }
 
+[notifications.browse_results]
+doc = """
+One page of what `browse` was asked for, carrying that call's `token`.
+
+`items` is `json` rather than a described structure because its shape belongs to a music
+service and not to us: a Sonos search hit, a Spotify album and a DLNA folder agree on almost
+nothing except that each has a name and can be selected. Every consumer draws them as a list
+and sends the `id` back, which is the whole contract. Each entry:
+
+```json
+{ "id": "...", "name": "...", "subtitle": "...", "art": "...",
+  "playable": true, "container": false }
+```
+
+`container` marks something to browse into — an album, a folder, a service. `playable` and
+`container` are independent: an album is both.
+
+`token` is whatever the `browse` carried, echoed. A driver that was given none sends none, and
+core treats the result as the latest for that binding — which is what one person at one screen
+actually does.
+"""
+requires = "has_browse"
+params.token = { type = "string", optional = true }
+params.items = { type = "json" }
+params.total = { type = "u32", optional = true, doc = "Across all pages, when the source knows it" }
+params.offset = { type = "u32", optional = true }
+
+[notifications.search_results]
+doc = "As `browse_results`, for a `search`."
+requires = "has_search"
+params.token = { type = "string", optional = true }
+params.items = { type = "json" }
+params.total = { type = "u32", optional = true }
+
+[notifications.volume_changed]
+requires = "has_discrete_volume"
+params.level = { type = "u32" }
+
+[notifications.mute_changed]
+requires = "has_mute"
+params.mute = { type = "bool" }
+
 [notifications.online_changed]
 params.online = { type = "bool" }
 
 [state]
 transport = { type = "string", from = "state" }
+volume    = { title = "Volume", type = "u32", from = "level" }
+mute      = { title = "Muted", type = "bool" }
 app       = { type = "string", doc = "Application currently in the foreground" }
 apps      = { type = "string_list", doc = "Installed applications, as read from the device" }
 app_icons = { type = "string_list", doc = "Artwork for `apps`, one per entry, same order" }
@@ -93,7 +243,22 @@ online    = { type = "bool" }
 doc = "Open an installed application. The valid names are whatever `apps` reports for this device."
 requires = "has_apps"
 params.app = { type = "string", values_from = "apps" }
-params.content_id = { type = "string", optional = true, doc = "Deep link to a specific title" }
+params.content_id = { type = "string", optional = true, doc = """
+Deep link to a specific title. Ignored by a device that does not declare `has_deep_link`.
+
+Opaque, and per *service* rather than per device — which is what makes it portable. A Disney+
+video id is the same id whether it is being opened on a Roku or an Apple TV; what differs is
+only how each box spells the request, and spelling it is the driver's job. So the portable
+reference to a piece of content is the app name, this id, and `content_kind` — never a URL,
+which is already one vendor's dialect.
+""" }
+params.content_kind = { type = "string", optional = true, values = ["movie", "series", "season", "episode", "live", "short"], doc = """
+What `content_id` refers to. Absent means the driver should do whatever it does by default.
+
+Needed because some devices will not deep link without being told: Roku's ECP takes a
+`mediaType` alongside the content id and opens the wrong thing — or nothing — when it is
+wrong, and a driver with no way to be told has to guess `movie` and be wrong for every series.
+""" }
 
 [notifications.app_changed]
 requires = "has_apps"

@@ -13,7 +13,7 @@
 //! Deliberately not `clap`. A handful of subcommands and one flag do not justify a dependency
 //! on a crate this size, and every driver author would pay for it in build time.
 
-use driver_sdk::catalog::{DiscoveryHints, Entry, Release};
+use driver_sdk::catalog::{DiscoveryHints, Entry, Release, Source};
 use driver_sdk::package::Package;
 use driver_sdk::proxy::{ProxyRegistry, docgen};
 use std::path::{Path, PathBuf};
@@ -30,6 +30,7 @@ usage:
   junodrv pack <dir> [--out <dir>]   validate and build a .junodrv
   junodrv check <dir>                validate only
   junodrv entry <pkg.junodrv> --repo R --url U --sha256 S [--version V] [--description D]
+                              [--source open|closed]
                                      emit the registry index rows for a built package
   junodrv docs [--out <dir>]         render the proxy reference as markdown
 
@@ -102,6 +103,16 @@ fn run() -> anyhow::Result<()> {
             let size = std::fs::metadata(&dir).map(|m| m.len()).unwrap_or(0);
             let version = flag("--version").unwrap_or_else(|| pkg.manifest.driver.version.clone());
 
+            // Unstated rather than guessed. An absent `source` reads as open in the catalog,
+            // which is right for every row written before the field existed, and a wrong guess
+            // here would either 404 a Source link or hide one that works.
+            let source = match flag("--source").as_deref() {
+                None => None,
+                Some("open") => Some(Source::Open),
+                Some("closed") => Some(Source::Closed),
+                Some(other) => anyhow::bail!("--source is open or closed, not `{other}`"),
+            };
+
             let entries: Vec<Entry> = std::iter::once(&pkg.manifest)
                 .chain(pkg.extra.iter())
                 .map(|m| Entry {
@@ -110,6 +121,7 @@ fn run() -> anyhow::Result<()> {
                     manufacturer: m.driver.manufacturer.clone(),
                     parent: m.driver.parent.clone(),
                     repo: flag("--repo").unwrap_or_default(),
+                    source,
                     proxies: m.proxy.iter().map(|p| p.ty.clone()).collect(),
                     runtime: format!("{:?}", m.driver.runtime).to_lowercase(),
                     description: flag("--description").unwrap_or_default(),

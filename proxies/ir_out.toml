@@ -1,5 +1,4 @@
 name = "ir_out"
-version = 1
 title = "IR Output"
 category = "connection"
 description = """

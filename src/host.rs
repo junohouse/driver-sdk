@@ -39,6 +39,23 @@ pub enum HostCall {
     /// An HTTP request. Core owns the client so drivers cannot each ship their own, and so
     /// timeouts, retries, and TLS are enforced in one place.
     Http(HttpRequest),
+    /// Publish on this device's MQTT connection. Requires `[[transport]] kind = "mqtt"`.
+    ///
+    /// Core is the *client* here, never a broker: every MQTT device already is one or has one
+    /// beside it, and the topology is one connection per device with nothing shared. So this is
+    /// the same arrangement as [`Self::Tx`] — core owns the socket, the TLS and the reconnect —
+    /// with a topic instead of a stream position.
+    Publish { topic: String, payload: String },
+    /// Ask for a topic on this device's MQTT connection.
+    ///
+    /// Remembered by core and asked for again after a reconnect, because a subscription is state
+    /// held by the broker and the broker is the thing that just restarted. Subscribing twice to
+    /// the same topic is harmless and does nothing.
+    ///
+    /// A call rather than a manifest field because the topics that matter are rarely constant: a
+    /// panel answers on a topic named after the client id it issued during pairing, which nobody
+    /// knows when the manifest is written.
+    Subscribe { topic: String },
     /// Emit a proxy notification. Validated against the declared capabilities before it
     /// reaches anything else.
     Notify {
@@ -54,7 +71,124 @@ pub enum HostCall {
         key: String,
         value: Value,
     },
+    /// Everything this device has behind it, as it currently is.
+    ///
+    /// The answer to a driver that cannot know its own shape until it has asked. A manifest's
+    /// `[[proxy]]` blocks are written before anybody has plugged anything in, which is right for
+    /// a television and impossible for a hub: an alarm panel has as many zones as somebody
+    /// programmed into it, and declaring 128 `sensor` proxies so the largest possible panel fits
+    /// would give every real house a hundred empty bindings.
+    ///
+    /// A **snapshot**, never a delta — the same bargain [`crate::adapter::Up::Present`] makes, and
+    /// it goes through the same code in core. A delta protocol needs a resync path, and a resync
+    /// path is a snapshot protocol with extra steps: after a reconnect a driver simply says what
+    /// it has now, and core reconciles. Nodes that stop appearing stop being offered; ones already
+    /// adopted keep their bindings and their history.
+    ///
+    /// Gated by the manifest's `[children] proxies`. A driver may only present kinds it declared,
+    /// so a security panel cannot grow a `lock` the day its vendor's firmware learns a new word —
+    /// see [`crate::manifest::ChildrenDecl`].
+    Present { nodes: Vec<Node> },
+    /// Aim these calls at one of this device's nodes rather than at the device itself.
+    ///
+    /// [`Self::Notify`] resolves its proxy against the device that returned it, which is exactly
+    /// right until a driver holds one connection on behalf of forty things behind it. The panel
+    /// hears that zone 7 opened; the binding that has to move belongs to zone 7's device, and
+    /// before this there was no way to say so from in-process code.
+    ///
+    /// A node nobody has adopted is not an error — it is in the offers list and its reports are
+    /// not state until somebody claims it — so calls for one are dropped quietly, the same as
+    /// [`crate::adapter::Up::Push`] for an unadopted node.
+    ForNode { node: String, calls: Vec<HostCall> },
     Log { level: String, msg: String },
+}
+
+/// One device a driver is offering, already mapped to Juno's semantics.
+///
+/// The mapping from a Zigbee cluster, a Z-Wave command class or an alarm panel's zone type to a
+/// proxy contract lives in the **driver**, never here. Core has no idea what cluster `0x0006` is
+/// and must never learn: that knowledge changes with every firmware and every quirk, and putting
+/// it in core would mean shipping a controller release to support a new bulb.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct Node {
+    /// Stable and driver-assigned. An IEEE address, a Z-Wave node id, a panel's zone number —
+    /// something that survives the device being renamed, re-roomed, or the driver restarting.
+    pub node: String,
+    pub name: String,
+    #[serde(default)]
+    pub manufacturer: String,
+    #[serde(default)]
+    pub model: String,
+    /// Which proxy contract this node is: `light`, `switch`, `sensor`, `lock`.
+    pub kind: String,
+    /// What *this particular device* can do, resolved against the contract named by `kind`.
+    ///
+    /// Per node, and that is the whole point rather than a refinement. A mesh is not a fleet of
+    /// one product: a plain white bulb and an extended-colour bulb are both `light`, and if they
+    /// resolve to the same contract then `set_cct` appears in the UI, in the automation editor
+    /// and in the assistant's tool surface for a bulb that cannot do it — and `validate_call`
+    /// waves it through to a driver that fails in silence. Somebody then spends an evening
+    /// deciding their new bulb is faulty.
+    ///
+    /// The driver is the only thing that can fill this in honestly, because the answer lives in
+    /// `zigbee-herdsman-converters` — a decade of per-model capability data that is exactly the
+    /// driver work nobody should repeat. Core does not have it and should never learn it: that
+    /// database changes weekly, and baking it in would mean a controller release per new bulb.
+    #[serde(default)]
+    pub capabilities: BTreeMap<String, Value>,
+    /// Whether the driver can currently reach it. A battery sensor that has not reported is
+    /// not a fault, so this is shown rather than acted on.
+    #[serde(default = "yes")]
+    pub online: bool,
+    /// Where the far side says this device lives. Empty when it has no idea, which is the
+    /// normal case for a radio.
+    ///
+    /// A **suggestion**, and the distinction is the whole reason this is safe. Rooms belong to
+    /// the project, and nothing here creates one: an offered node carries the name through to the
+    /// moment an installer adopts it, and core matches or creates only then, with the list on
+    /// screen. A driver still cannot make a room while nobody is looking, rename one, or delete
+    /// one.
+    ///
+    /// It exists because some systems genuinely know. A Zigbee mesh does not, but a Control4
+    /// project does — every device in it is already filed under a room somebody named — and
+    /// throwing that away would mean hand-placing several hundred devices to import a house
+    /// that had already been commissioned once.
+    #[serde(default)]
+    pub room: String,
+    /// Which of the driver's per-device settings *this* node actually has.
+    ///
+    /// `capabilities` says what the device can be commanded to do, resolved against its contract.
+    /// This is the other half: the knobs that are not commands at all — an occupancy hold, a
+    /// sensitivity — which a driver exposes as `[[action]]` and which exist on some devices of a
+    /// class and not others. An SNZB-06P and a door contact are both `sensor`; only one has a
+    /// hold time.
+    ///
+    /// Same reasoning as `capabilities`, and the same reason it cannot live in core: the answer
+    /// is in `zigbee-herdsman-converters`, changes weekly, and is per model. An action naming
+    /// one of these in [`crate::manifest::ActionDecl::needs_one_of`] appears only on the nodes
+    /// that reported it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub settings: Vec<String>,
+}
+
+/// Hand-written rather than derived, because `online` defaults to *true*.
+///
+/// A node is present unless it says otherwise — the same rule as the serde default above, and
+/// deriving `Default` would quietly give every node built this way `online: false`.
+impl Default for Node {
+    fn default() -> Node {
+        Node {
+            node: String::new(),
+            name: String::new(),
+            manufacturer: String::new(),
+            model: String::new(),
+            kind: String::new(),
+            capabilities: BTreeMap::new(),
+            online: true,
+            room: String::new(),
+            settings: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -153,6 +287,32 @@ pub trait DriverModule: Send + Sync {
         args: &Args,
     ) -> Vec<HostCall>;
 
+    /// A command for one of the nodes this device presented. See [`HostCall::Present`].
+    ///
+    /// `inst` is the **parent's** instance, not the node's, and that is deliberate rather than
+    /// convenient: the address, the token and the open connection belong to the panel, and calls
+    /// returned from here go out on the panel's transport. A node is an address within a
+    /// connection somebody else owns, so anything else would mean forty devices each holding
+    /// their own copy of one socket's credentials.
+    ///
+    /// `kind` is the node's proxy contract, so a driver that presents both locks and lights can
+    /// switch on it without keeping its own table of which node is which.
+    ///
+    /// Defaulted, like [`Self::on_action`] and for the same reason: a driver is only ever sent one
+    /// of these for a node it presented itself, so a driver built before this existed is never
+    /// asked. The manifest is the gate, not the trait — no ABI bump.
+    fn on_node_command(
+        &self,
+        inst: &mut Instance,
+        node: &str,
+        kind: &str,
+        cmd: &str,
+        args: &Args,
+    ) -> Vec<HostCall> {
+        let _ = (inst, node, kind, cmd, args);
+        Vec::new()
+    }
+
     /// A notification arrived from a provider this device is bound to — the relay it drives
     /// changed state, bytes came back from its serial port.
     fn on_event(
@@ -232,6 +392,18 @@ pub enum Request {
         proxy: LocalId,
         cmd: String,
         args: Args,
+        instance: Instance,
+    },
+    /// A command for a node, carrying the node's id and contract. Gated by the driver having
+    /// presented that node, so one is never sent to a driver that does not implement it.
+    OnNodeCommand {
+        #[serde(default)]
+        driver_id: String,
+        node: String,
+        kind: String,
+        cmd: String,
+        args: Args,
+        /// The parent's instance — see [`DriverModule::on_node_command`].
         instance: Instance,
     },
     OnEvent {
@@ -511,9 +683,18 @@ pub enum SetupStep {
     ///
     /// The driver still never touches a socket. It says where to connect, what to send, and
     /// how long to listen; core owns the connection, the TLS, and the deadline. What came back
-    /// arrives as raw bytes in `input.received`, with the connection's id in `input.session` —
+    /// arrives as text in `input.received`, with the connection's id in `input.session` —
     /// pass that back to keep using it. **Framing is the driver's job**: core returns whatever
     /// arrived within the window and does not know where one message ends.
+    ///
+    /// # Binary protocols
+    ///
+    /// `send`/`received` are text, and a pairing handshake made of encrypted frames cannot use
+    /// them: `received` is built with a lossy UTF-8 decode, so a ChaCha20 ciphertext arrives
+    /// with most of its bytes replaced and no way to tell. Use [`Self::Session::send_bytes`] and
+    /// read `input.received_bytes` instead — the same connection, the same step, bytes end to
+    /// end. They are separate fields rather than a mode flag so that a driver cannot half-switch
+    /// and get a silently mangled handshake.
     ///
     /// Connections live as long as the run of steps that opened them, and close on their own
     /// when the flow next needs a person or finishes.
@@ -524,10 +705,21 @@ pub enum SetupStep {
         /// Where to connect. Required when opening, ignored when continuing.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         open: Option<Connect>,
+        /// Wait for the device to connect to *us* instead. See [`Accept`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        accept: Option<Accept>,
         /// Written before listening. Empty listens without sending, which is how you receive
         /// a greeting the device sends unprompted.
         #[serde(default)]
         send: String,
+        /// The same, as bytes, for a protocol that is not text. What came back arrives in
+        /// `input.received_bytes` as an array of numbers, undecoded.
+        ///
+        /// Set both this and `send` and this one wins — core writes bytes and answers with
+        /// bytes. Nothing warns about it because there is no sensible reason to set both, and a
+        /// warning at pairing time is read long after the flow has moved on.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        send_bytes: Vec<u8>,
         /// How long to listen. Core returns everything that arrived in the window, which may
         /// be nothing.
         #[serde(default = "half_second")]
@@ -586,6 +778,23 @@ pub enum SetupStep {
     Failed { reason: String },
 }
 
+impl SetupStep {
+    /// Finished, with nothing to import.
+    ///
+    /// The overwhelmingly common ending, and the one worth a constructor. `rules` and `scenes`
+    /// were added to [`SetupStep::Done`] later and broke every driver that had written the
+    /// variant out by hand — four of five, all with the same two-line diff. [`Candidate`]
+    /// derives `Default` to head off exactly that, but an enum variant cannot, so this is where
+    /// the same protection has to live. A driver that does import something writes it itself.
+    pub fn done(devices: Vec<Candidate>) -> SetupStep {
+        SetupStep::Done {
+            devices,
+            rules: Vec::new(),
+            scenes: Vec::new(),
+        }
+    }
+}
+
 fn one_second() -> u32 {
     1000
 }
@@ -619,6 +828,44 @@ pub struct Connect {
     pub client_cert: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_key: Option<String>,
+}
+
+/// Wait for the device to connect to **us**, optionally saying so over mDNS.
+///
+/// The inverse of [`Connect`], and it is not a symmetry for its own sake: some pairing flows only
+/// happen inbound. A Qolsys panel pairs a touchscreen by scanning for a service, dialling it, and
+/// signing the certificate request it finds there — the panel is the client and the thing being
+/// paired is the server. A driver that could only dial out could never be paired at all.
+///
+/// Core owns the listener, the advertisement and the TLS, and tears all three down when the flow
+/// moves on. What arrives comes back in `input.received` and the connection stays open under the
+/// same `input.session` as any other, so the rest of the exchange is written exactly like an
+/// outbound one.
+///
+/// The driver never sees an address to guess at: `port` may be zero, core picks a free one, and
+/// the advertisement carries whichever it got.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Accept {
+    /// Service type to advertise while listening — `_http._tcp`. Empty advertises nothing, for a
+    /// device that already knows where to look.
+    #[serde(default)]
+    pub mdns_type: String,
+    /// Instance name within that type. The device is usually looking for an exact one.
+    #[serde(default)]
+    pub mdns_name: String,
+    /// 0 asks for any free port, which is what an advertised service should do — a fixed one is
+    /// a clash waiting for the second controller on the network.
+    #[serde(default)]
+    pub port: u16,
+    /// Present TLS. The certificate is ours to choose and the far side will not verify it: in
+    /// these flows it is about to *issue* us one.
+    #[serde(default)]
+    pub tls: bool,
+    /// PEM identity to present, both or neither. [`SetupStep::MakeIdentity`] makes one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cert: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 impl Connect {
@@ -694,6 +941,17 @@ pub fn dispatch(module: &dyn DriverModule, request: Request) -> Response {
             mut instance,
         } => {
             let calls = module.on_command(&mut instance, proxy, &cmd, &args);
+            (calls, Some(instance))
+        }
+        Request::OnNodeCommand {
+            driver_id: _,
+            node,
+            kind,
+            cmd,
+            args,
+            mut instance,
+        } => {
+            let calls = module.on_node_command(&mut instance, &node, &kind, &cmd, &args);
             (calls, Some(instance))
         }
         Request::OnEvent {

@@ -27,9 +27,17 @@
 //! crate-type = ["cdylib"]
 //! ```
 //!
-//! `cargo build --release` produces the driver file; `junod pack` wraps it and the manifest
-//! into a `.junodrv` that a controller can install — or `--features pack` and you can build
-//! one from your own tests, without a controller anywhere.
+//! ```bash
+//! cargo build --release --target wasm32-wasip1
+//! ```
+//!
+//! That produces the driver file; `junod pack` wraps it and the manifest into a `.junodrv` that
+//! a controller can install — or `--features pack` and you can build one from your own tests,
+//! without a controller anywhere.
+//!
+//! Building for the host instead produces a native plugin, which the controller will also load
+//! but only trusts from its own CI, because it runs with the controller's privileges. Wasm is
+//! the one to ship.
 //!
 //! # This crate depends on nothing of Juno's
 //!
@@ -54,18 +62,25 @@
 //!
 //! # What the macro does
 //!
-//! Exports three C entry points a controller looks for. Everything crosses as JSON, so your
-//! driver never shares a Rust type with the controller and cannot be broken by a compiler
-//! version mismatch. You do not call these; they exist so `unsafe` lives here rather than in
-//! every driver.
+//! Exports the C entry points a controller looks for — three, and a fourth on wasm. Everything
+//! crosses as JSON, so your driver never shares a Rust type with the controller and cannot be
+//! broken by a compiler version mismatch. You do not call these; they exist so `unsafe` lives
+//! here rather than in every driver.
+//!
+//! The same signatures serve both targets, which is why moving to a sandbox was not an ABI
+//! change: `juno_call(ptr, len, *mut usize) -> *mut u8` is as valid a wasm function as a native
+//! one. The only thing wasm adds is [`juno_alloc`], because a host outside the module's memory
+//! cannot hand it a pointer to bytes it owns.
+//!
+//! [`juno_alloc`]: crate::export_driver
 
 pub mod adapter;
 pub mod host;
 pub mod sddp;
 
 pub use host::{
-    Args, Candidate, Connect, DeviceId, DriverModule, Field, HostCall, HttpRequest, ImportedAction,
-    ImportedRule, ImportedScene, Instance, PickRow, Request, Response, SetupStep, dispatch,
+    Accept, Args, Candidate, Connect, DeviceId, DriverModule, Field, HostCall, HttpRequest, ImportedAction,
+    ImportedRule, ImportedScene, Instance, Node, PickRow, Request, Response, SetupStep, dispatch,
 };
 pub use serde_json::{Value, json};
 
@@ -156,6 +171,12 @@ macro_rules! export_driver {
 
             // A panicking driver must not unwind across the C boundary — that is undefined
             // behaviour. Catch it and report it as a warning instead.
+            //
+            // On wasm this catches nothing, because that target has no unwinder: the panic
+            // aborts, which is a trap. That is not a gap. The controller catches the trap,
+            // reports it against the one device, and rebuilds the module before the next call —
+            // a stronger guarantee than this, and the reason `panic = "abort"` is safe to set
+            // for a wasm build and is not set here for a native one.
             let response = ::std::panic::catch_unwind(|| {
                 let module = <$ty as ::std::default::Default>::default();
                 $crate::dispatch(&module, request)
@@ -178,6 +199,26 @@ macro_rules! export_driver {
             if !ptr.is_null() {
                 drop(unsafe { ::std::vec::Vec::from_raw_parts(ptr, len, len) });
             }
+        }
+
+        /// Lend the controller a buffer inside this module's memory, for it to write a
+        /// request into.
+        ///
+        /// Only on wasm, and only because of what a wasm module *is*. A native driver shares
+        /// an address space with the controller, so `juno_call` can be handed a pointer to
+        /// the controller's own bytes. A wasm module cannot see them: it has one linear
+        /// memory, the host can write into it, but only the module knows which parts its
+        /// allocator considers free. So the module hands out the address and the host fills
+        /// it — the same arrangement as `juno_free`, in the other direction.
+        ///
+        /// Freed with `juno_free` and the same length, like anything else here.
+        #[cfg(target_arch = "wasm32")]
+        #[unsafe(no_mangle)]
+        pub extern "C" fn juno_alloc(len: usize) -> *mut u8 {
+            let mut buf = ::std::vec::Vec::<u8>::with_capacity(len);
+            let ptr = buf.as_mut_ptr();
+            ::std::mem::forget(buf);
+            ptr
         }
     };
 }

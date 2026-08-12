@@ -1,5 +1,4 @@
 name = "tv"
-version = 1
 title = "TV"
 category = "av"
 description = """
@@ -15,6 +14,12 @@ has_discrete_mute   = { type = "bool", default = false }
 has_volume          = { type = "bool", default = true }
 has_channel_control = { type = "bool", default = false, doc = "Built-in tuner" }
 volume_max          = { type = "u32",  default = 100 }
+has_hold            = { type = "bool", default = false, doc = """
+Volume can be held down and released, rather than only stepped. See `hold`.
+
+A screen on an emitter can ramp; the same screen reached over HTTP one request at a time
+cannot, however many volume keys it has.
+""" }
 warmup_ms           = { type = "u32",  default = 0, doc = "Time after power-on before it will accept an input change. Pathfinding respects this." }
 cooldown_ms         = { type = "u32",  default = 0 }
 supports_arc        = { type = "bool", default = false }
@@ -45,6 +50,19 @@ params.mute = { type = "bool" }
 
 [commands.mute_toggle]
 requires = "has_volume"
+
+[commands.hold]
+doc = """
+Begin holding a key, and keep holding it until `release`. The difference between a step and a
+ramp — see the same pair on `media_player`, which this mirrors so a room does not have to care
+which of the two is carrying its volume.
+"""
+requires = "has_hold"
+params.what = { type = "string", values = ["volume_up", "volume_down"], values_require = { volume_up = "has_volume", volume_down = "has_volume" } }
+
+[commands.release]
+doc = "Stop holding. Takes no argument: one key is held at a time."
+requires = "has_hold"
 
 [commands.set_channel]
 requires = "has_channel_control"

@@ -1,5 +1,4 @@
 name = "serial_port"
-version = 1
 title = "Serial Port"
 category = "connection"
 description = """

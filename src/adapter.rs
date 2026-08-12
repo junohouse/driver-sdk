@@ -108,97 +108,12 @@ pub enum Up {
     },
 }
 
-/// One device an adapter is offering, already mapped to Juno's semantics.
+/// One device a driver is offering, already mapped to Juno's semantics.
 ///
-/// The mapping from a Zigbee cluster or a Z-Wave command class to a proxy contract lives in the
-/// **adapter**, never here. Core has no idea what cluster `0x0006` is and must never learn:
-/// that knowledge changes with every firmware and every quirk, and putting it in core would mean
-/// shipping a controller release to support a new bulb.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Node {
-    /// Stable, adapter-assigned. An IEEE address or a Z-Wave node id — something that survives
-    /// the device being renamed, re-roomed, or the adapter restarting.
-    pub node: String,
-    pub name: String,
-    #[serde(default)]
-    pub manufacturer: String,
-    #[serde(default)]
-    pub model: String,
-    /// Which proxy contract this node is: `light`, `switch`, `sensor`, `lock`.
-    pub kind: String,
-    /// What *this particular device* can do, resolved against the contract named by `kind`.
-    ///
-    /// Per node, and that is the whole point rather than a refinement. A mesh is not a fleet of
-    /// one product: a plain white bulb and an extended-colour bulb are both `light`, and if they
-    /// resolve to the same contract then `set_cct` appears in the UI, in the automation editor
-    /// and in the assistant's tool surface for a bulb that cannot do it — and `validate_call`
-    /// waves it through to a driver that fails in silence. Somebody then spends an evening
-    /// deciding their new bulb is faulty.
-    ///
-    /// The adapter is the only thing that can fill this in honestly, because the answer lives in
-    /// `zigbee-herdsman-converters` — a decade of per-model capability data that is exactly the
-    /// driver work nobody should repeat. Core does not have it and should never learn it: that
-    /// database changes weekly, and baking it in would mean a controller release per new bulb.
-    #[serde(default)]
-    pub capabilities: BTreeMap<String, Value>,
-    /// Whether the adapter can currently reach it. A battery sensor that has not reported is
-    /// not a fault, so this is shown rather than acted on.
-    #[serde(default = "yes")]
-    pub online: bool,
-    /// Where the far side says this device lives. Empty when it has no idea, which is the
-    /// normal case for a radio.
-    ///
-    /// A **suggestion**, and the distinction is the whole reason this is safe. Rooms belong to
-    /// the project (`house::project::Room`), and nothing here creates one: an offered node
-    /// carries the name through to the moment an installer adopts it, and core matches or
-    /// creates only then, with the list on screen. A driver still cannot make a room while
-    /// nobody is looking, rename one, or delete one.
-    ///
-    /// It exists because some systems genuinely know. A Zigbee mesh does not, but a Control4
-    /// project does — every device in it is already filed under a room somebody named — and
-    /// throwing that away would mean hand-placing several hundred devices to import a house
-    /// that had already been commissioned once.
-    #[serde(default)]
-    pub room: String,
-    /// Which of the driver's per-device settings *this* node actually has.
-    ///
-    /// `capabilities` says what the device can be commanded to do, resolved against its contract.
-    /// This is the other half: the knobs that are not commands at all — an occupancy hold, a
-    /// sensitivity — which a driver exposes as `[[action]]` and which exist on some devices of a
-    /// class and not others. An SNZB-06P and a door contact are both `sensor`; only one has a
-    /// hold time.
-    ///
-    /// Same reasoning as `capabilities`, and the same reason it cannot live in core: the answer
-    /// is in `zigbee-herdsman-converters`, changes weekly, and is per model. An action naming
-    /// one of these in [`crate::manifest::ActionDecl::needs`] appears only on the nodes that
-    /// reported it.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub settings: Vec<String>,
-}
-
-fn yes() -> bool {
-    true
-}
-
-/// Hand-written rather than derived, because `online` defaults to *true*.
-///
-/// A node is present unless it says otherwise — the same rule as the serde default above, and
-/// deriving `Default` would quietly give every node built this way `online: false`.
-impl Default for Node {
-    fn default() -> Node {
-        Node {
-            node: String::new(),
-            name: String::new(),
-            manufacturer: String::new(),
-            model: String::new(),
-            kind: String::new(),
-            capabilities: BTreeMap::new(),
-            online: true,
-            room: String::new(),
-            settings: Vec::new(),
-        }
-    }
-}
+/// Lives in [`crate::host`] now, because it stopped being the adapter protocol's alone: an
+/// in-process driver reports what it found with [`HostCall::Present`] and needs the same shape.
+/// Re-exported here so `adapter::Node` keeps meaning what it did.
+pub use crate::host::Node;
 
 /// Core to adapter. One JSON object per line on stdin.
 ///
