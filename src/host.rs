@@ -683,9 +683,18 @@ pub enum SetupStep {
     ///
     /// The driver still never touches a socket. It says where to connect, what to send, and
     /// how long to listen; core owns the connection, the TLS, and the deadline. What came back
-    /// arrives as raw bytes in `input.received`, with the connection's id in `input.session` —
+    /// arrives as text in `input.received`, with the connection's id in `input.session` —
     /// pass that back to keep using it. **Framing is the driver's job**: core returns whatever
     /// arrived within the window and does not know where one message ends.
+    ///
+    /// # Binary protocols
+    ///
+    /// `send`/`received` are text, and a pairing handshake made of encrypted frames cannot use
+    /// them: `received` is built with a lossy UTF-8 decode, so a ChaCha20 ciphertext arrives
+    /// with most of its bytes replaced and no way to tell. Use [`Self::Session::send_bytes`] and
+    /// read `input.received_bytes` instead — the same connection, the same step, bytes end to
+    /// end. They are separate fields rather than a mode flag so that a driver cannot half-switch
+    /// and get a silently mangled handshake.
     ///
     /// Connections live as long as the run of steps that opened them, and close on their own
     /// when the flow next needs a person or finishes.
@@ -703,6 +712,14 @@ pub enum SetupStep {
         /// a greeting the device sends unprompted.
         #[serde(default)]
         send: String,
+        /// The same, as bytes, for a protocol that is not text. What came back arrives in
+        /// `input.received_bytes` as an array of numbers, undecoded.
+        ///
+        /// Set both this and `send` and this one wins — core writes bytes and answers with
+        /// bytes. Nothing warns about it because there is no sensible reason to set both, and a
+        /// warning at pairing time is read long after the flow has moved on.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        send_bytes: Vec<u8>,
         /// How long to listen. Core returns everything that arrived in the window, which may
         /// be nothing.
         #[serde(default = "half_second")]

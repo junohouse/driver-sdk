@@ -324,6 +324,19 @@ pub struct TransportDecl {
     pub discovery: String,
     #[serde(default)]
     pub keepalive: bool,
+    /// This connection carries framed bytes, not lines of text.
+    ///
+    /// Set it and reads come back as `rx { bytes }` — a JSON array — with core doing no framing
+    /// at all, because it cannot know where one message ends. Leave it unset and reads come back
+    /// as `rx { data }`, line-oriented and UTF-8, which is right for telnet, for SSE and for
+    /// every driver that has needed this so far.
+    ///
+    /// It has to be declared rather than inferred. A binary frame read down the text path is cut
+    /// at the first `0x0A` inside its length prefix and has every non-UTF-8 byte replaced, and
+    /// neither is detectable afterwards — the driver receives something that decodes to
+    /// plausible nonsense. Guessing wrong in that direction is worse than saying so here.
+    #[serde(default)]
+    pub binary: bool,
     /// Wrap the connection in mutual TLS — a client certificate property must be set on the
     /// device (or inherited from its bridge) or the connection is refused.
     #[serde(default)]
