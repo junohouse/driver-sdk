@@ -31,6 +31,18 @@ volume_max          = { type = "u32",  default = 100 }
 has_queue          = { type = "bool", default = false, doc = "Content can be queued rather than only played now" }
 has_dpad           = { type = "bool", default = false, doc = "Cursor navigation for an on-screen UI" }
 has_apps           = { type = "bool", default = false, doc = "Installed applications can be listed and launched" }
+has_deep_link      = { type = "bool", default = false, doc = """
+`launch_app` can open a *particular title*, not just the app.
+
+Separate from `has_apps` because the two come apart in both directions and the difference is
+invisible from outside: a Roku set to Limited control still launches channels and a tvOS app
+that dropped its deep links still opens. Without this, `content_id` is a parameter every
+app-capable driver accepts and some silently ignore — so "play Severance" reports success and
+leaves somebody on a home screen.
+
+Whoever is resolving a title reads this to decide whether to bother looking one up, and to
+tell a person the truth when the answer is no.
+""" }
 has_number_keys    = { type = "bool", default = false }
 is_video_source    = { type = "bool", default = false }
 is_audio_source    = { type = "bool", default = true }
@@ -193,7 +205,22 @@ online    = { type = "bool" }
 doc = "Open an installed application. The valid names are whatever `apps` reports for this device."
 requires = "has_apps"
 params.app = { type = "string", values_from = "apps" }
-params.content_id = { type = "string", optional = true, doc = "Deep link to a specific title" }
+params.content_id = { type = "string", optional = true, doc = """
+Deep link to a specific title. Ignored by a device that does not declare `has_deep_link`.
+
+Opaque, and per *service* rather than per device — which is what makes it portable. A Disney+
+video id is the same id whether it is being opened on a Roku or an Apple TV; what differs is
+only how each box spells the request, and spelling it is the driver's job. So the portable
+reference to a piece of content is the app name, this id, and `content_kind` — never a URL,
+which is already one vendor's dialect.
+""" }
+params.content_kind = { type = "string", optional = true, values = ["movie", "series", "season", "episode", "live", "short"], doc = """
+What `content_id` refers to. Absent means the driver should do whatever it does by default.
+
+Needed because some devices will not deep link without being told: Roku's ECP takes a
+`mediaType` alongside the content id and opens the wrong thing — or nothing — when it is
+wrong, and a driver with no way to be told has to guess `movie` and be wrong for every series.
+""" }
 
 [notifications.app_changed]
 requires = "has_apps"
