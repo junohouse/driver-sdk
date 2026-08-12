@@ -30,6 +30,13 @@ has_mute            = { type = "bool", default = false }
 volume_max          = { type = "u32",  default = 100 }
 has_queue          = { type = "bool", default = false, doc = "Content can be queued rather than only played now" }
 has_dpad           = { type = "bool", default = false, doc = "Cursor navigation for an on-screen UI" }
+has_hold           = { type = "bool", default = false, doc = """
+A key can be held down and later released, rather than only tapped. See `hold`.
+
+Separate from the commands it holds because the two really do come apart: an IR emitter can
+ramp anything it has a code for, and a box reached over HTTP one request at a time can ramp
+nothing at all however many keys it has.
+""" }
 has_apps           = { type = "bool", default = false, doc = "Installed applications can be listed and launched" }
 has_deep_link      = { type = "bool", default = false, doc = """
 `launch_app` can open a *particular title*, not just the app.
@@ -129,6 +136,37 @@ params.query = { type = "string" }
 [commands.dpad]
 requires = "has_dpad"
 params.key = { type = "string", values = ["up", "down", "left", "right", "select", "back", "menu", "home", "info"] }
+
+[commands.hold]
+doc = """
+Begin holding a key down, and keep holding it until `release`.
+
+The difference between a step and a ramp. Sending `volume_up` forty times is not the same
+thing as holding it: an IR emitter has to keep the carrier up rather than re-send a frame, and
+a box on the network wants a press with no release rather than forty presses. Both are the
+same intent — somebody has their finger on a button — and this is where that intent goes.
+
+Pairs with `keypad`'s `held` and `released`, which exist to bracket exactly this.
+
+`what` names the command being held rather than there being a `hold_volume_up`, a
+`hold_scan_forward` and six more. The cost is that it is not gated per key the way a command
+can be gated per capability: a player declaring `has_hold` accepts `hold {what = "scan_forward"}`
+even without `has_scan`. The driver refuses it — it is the only thing that knows — and the
+alternative was eight capabilities and sixteen commands to say one thing.
+"""
+requires = "has_hold"
+params.what = { type = "string", values = ["volume_up", "volume_down", "scan_forward", "scan_reverse", "up", "down", "left", "right"] }
+
+[commands.release]
+doc = """
+Stop holding whatever `hold` started. Takes no argument: one thing is held at a time, because
+one finger is on one button, and a release that had to name its key would be a way to get them
+out of step.
+
+A driver is expected to release on its own if the connection drops mid-hold. A stuck ramp is
+worse than a lost one — it runs the volume to the top of its range with nobody touching it.
+"""
+requires = "has_hold"
 
 [notifications.transport_changed]
 params.state = { type = "string", values = ["playing", "paused", "stopped", "buffering"] }
