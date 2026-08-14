@@ -173,6 +173,13 @@ pub struct ChildrenDecl {
     /// Proxy contracts this driver may present. Everything else is refused.
     #[serde(default)]
     pub proxies: Vec<String>,
+    /// Adopt reported nodes immediately instead of waiting for an installer to select them.
+    ///
+    /// This is deliberately opt-in. It is appropriate for a commissioned system whose own
+    /// room inventory is authoritative (for example Sonos), but not for an open radio network
+    /// where hearing a device is not consent to add it to the project.
+    #[serde(default)]
+    pub auto_adopt: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -506,6 +513,11 @@ impl Manifest {
             .is_some_and(|c| c.proxies.iter().any(|p| p == kind))
     }
 
+    /// Whether newly presented nodes should be adopted without an installer selection.
+    pub fn auto_adopts_children(&self) -> bool {
+        self.children.as_ref().is_some_and(|c| c.auto_adopt)
+    }
+
     /// The proxy the driver leads with — explicit `primary`, else the first declared.
     pub fn primary_proxy(&self) -> Option<LocalId> {
         self.proxy
@@ -797,7 +809,26 @@ mod id_tests {
         .expect("parses");
         assert!(hub.may_present("sensor"));
         assert!(!hub.may_present("lock"), "a lock is not on the list");
+        assert!(!hub.auto_adopts_children(), "adoption is opt-in");
         assert!(hub.validate(&registry).is_empty());
+
+        let commissioned = Manifest::parse(
+            r#"
+            [driver]
+            id = "test.commissioned"
+            name = "Commissioned system"
+            version = "1.0.0"
+            runtime = "native"
+            [[proxy]]
+            id = 1
+            type = "bridge"
+            [children]
+            proxies = ["sensor"]
+            auto_adopt = true
+            "#,
+        )
+        .expect("parses");
+        assert!(commissioned.auto_adopts_children());
 
         let typo = Manifest::parse(
             r#"
