@@ -107,6 +107,24 @@ pub enum HostCall {
     /// not state until somebody claims it — so calls for one are dropped quietly, the same as
     /// [`crate::adapter::Up::Push`] for an unadopted node.
     ForNode { node: String, calls: Vec<HostCall> },
+    /// The hardware behind this device is gone, and the driver knows it first-hand.
+    ///
+    /// For a hub that reports its own removals — a Hue bridge pushes `delete` on its event stream
+    /// when somebody unpairs a bulb in the vendor's app — this is the other half of
+    /// `device_added`. Core forgets the device outright, which is what somebody who removed it at
+    /// the hub meant; anything less leaves a tile that is permanently offline and a rule that
+    /// silently never fires again.
+    ///
+    /// **Only for hardware a driver is certain has been removed at its source.** It is not
+    /// "unreachable": a bulb at the far end of a mesh, a bridge halfway through a reboot and a
+    /// house whose Wi-Fi dropped are all still there, and deleting them because a poll timed out
+    /// would delete somebody's house every time their router restarts. Offline is
+    /// `online_changed`, which is state and comes back on its own. This is a one-way door — see
+    /// [`Runtime::forget_device`], which takes the device's rules with it.
+    ///
+    /// `reason` is shown to whoever finds out afterwards, so it should say where the removal was
+    /// observed rather than restate that something was deleted.
+    Gone { reason: String },
     Log { level: String, msg: String },
 }
 
@@ -244,6 +262,14 @@ impl HostCall {
             proxy,
             name: name.into(),
             args,
+        }
+    }
+
+    /// See [`HostCall::Gone`] — for hardware removed at its source, never for hardware that has
+    /// merely stopped answering.
+    pub fn gone(reason: impl Into<String>) -> Self {
+        HostCall::Gone {
+            reason: reason.into(),
         }
     }
 }
