@@ -79,10 +79,10 @@ pub mod host;
 pub mod sddp;
 
 pub use host::{
-    Accept, Args, Candidate, Connect, DeviceId, DriverModule, Field, GroupDisposition, GroupMember,
-    GroupMemberCalls, GroupOperation, GroupRequest, GroupResponse, HostCall, HttpRequest,
-    ImportedAction, ImportedRule, ImportedScene, Instance, Node, PickRow, Request, Response,
-    SetupStep, dispatch,
+    Accept, Args, Candidate, Connect, ConnectionDecl, DeviceId, Direction, DriverModule, Field,
+    GroupDisposition, GroupMember, GroupMemberCalls, GroupOperation, GroupRequest, GroupResponse,
+    HostCall, HttpRequest, ImportedAction, ImportedRule, ImportedScene, Instance, Node, PickRow,
+    Request, Response, SetupStep, dispatch,
 };
 pub use serde_json::{Value, json};
 

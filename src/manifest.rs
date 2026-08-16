@@ -71,12 +71,11 @@ impl ControlKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Direction {
-    Consumer,
-    Provider,
-}
+/// Re-exported rather than defined here: a driver builds these to answer
+/// [`crate::HostCall::Connections`], and `manifest` is behind the `contracts` feature that a
+/// driver does not compile. They live in [`crate::host`], which is always built, and stay
+/// reachable under their long-standing paths from here.
+pub use crate::host::{ConnectionDecl, Direction};
 
 fn default_true() -> bool {
     true
@@ -317,16 +316,6 @@ pub struct ControlDecl {
     #[serde(default = "default_true")]
     pub required: bool,
     pub proxy: Option<LocalId>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct ConnectionDecl {
-    pub id: LocalId,
-    pub proxy: LocalId,
-    pub dir: Direction,
-    pub class: String,
-    pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

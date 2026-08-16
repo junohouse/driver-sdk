@@ -19,6 +19,32 @@ use std::collections::BTreeMap;
 pub type DeviceId = u32;
 pub type Args = BTreeMap<String, Value>;
 
+/// Which way signal travels through a connection, from the device's point of view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Direction {
+    Consumer,
+    Provider,
+}
+
+/// One signal endpoint: an HDMI input on a television, the output of a disc player.
+///
+/// Here rather than in [`crate::manifest`], where it is still re-exported from, because a driver
+/// builds these to answer [`HostCall::Connections`] and `manifest` is behind the `contracts`
+/// feature that a driver does not compile.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectionDecl {
+    /// Driver-local and **stable across restarts** — a project remembers what an installer
+    /// wired by this number, so renumbering moves somebody's cabling.
+    pub id: LocalId,
+    pub proxy: LocalId,
+    pub dir: Direction,
+    /// `HDMI`, `Optical`, `Analog`. What the pathfinder costs and matches a signal against.
+    pub class: String,
+    pub name: String,
+}
+
 /// Something a driver asks core to do. Drivers return these rather than calling back into
 /// core, which keeps them synchronous, pure, and trivially testable — and means core decides
 /// what actually happens, including refusing.
@@ -46,6 +72,28 @@ pub enum HostCall {
     /// the same arrangement as [`Self::Tx`] — core owns the socket, the TLS and the reconnect —
     /// with a topic instead of a stream position.
     Publish { topic: String, payload: String },
+    /// The signal connections this device actually has, as it currently is.
+    ///
+    /// `[[connection]]` in a manifest is written before anybody has plugged anything in, so for
+    /// a whole product line it can only be a guess — and it is wrong in both directions at once:
+    /// a manifest declaring four HDMI ports gives a three-port set a phantom fourth that the
+    /// pathfinder will happily route a room through, and gives a six-port set two inputs nobody
+    /// can select. Every television that speaks to a controller at all can be *asked*, so this
+    /// is the driver answering with what it found.
+    ///
+    /// A **snapshot**, never a delta, and replacing the manifest's list outright when present —
+    /// the same bargain [`Self::Present`] makes and for the same reason: after a reconnect a
+    /// driver says what it has now and core reconciles, with no resync path to get wrong. An
+    /// empty list is therefore meaningful (this device has no signal connections) and is
+    /// distinct from never having sent one (use the manifest's).
+    ///
+    /// Ids must be **stable across restarts and firmware updates** — a project remembers what an
+    /// installer wired by this number, so a driver that renumbers its inputs moves somebody's
+    /// cabling. Prefer deriving them from the device's own identifiers rather than from the
+    /// order a list happened to arrive in.
+    Connections {
+        connections: Vec<ConnectionDecl>,
+    },
     /// A Wake-on-LAN magic packet, broadcast on core's behalf.
     ///
     /// The one case a driver dials nobody: the device is asleep and there is no socket to hold
@@ -1221,5 +1269,40 @@ mod group_tests {
             GroupDisposition::Handled
         );
         assert_eq!(response.scratch.get("seen_group"), Some(&serde_json::json!(7)));
+    }
+}
+
+#[cfg(test)]
+mod connection_tests {
+    use super::*;
+
+    /// A driver compiles the SDK **without** the `contracts` feature, so the types it needs to
+    /// answer [`HostCall::Connections`] have to live outside `manifest`. This test is the guard:
+    /// it builds one the way a driver does and round-trips it through the ABI's JSON, which is
+    /// what a wasm driver's reply actually crosses.
+    #[test]
+    fn a_driver_can_build_and_serialise_connections() {
+        let call = HostCall::Connections {
+            connections: vec![ConnectionDecl {
+                id: 1001,
+                proxy: 2,
+                dir: Direction::Consumer,
+                class: "HDMI".into(),
+                name: "HDMI-1".into(),
+            }],
+        };
+        let wire = serde_json::to_string(&call).expect("serialises");
+        assert!(wire.contains("\"call\":\"connections\""), "{wire}");
+        assert!(wire.contains("\"dir\":\"consumer\""), "{wire}");
+        assert_eq!(serde_json::from_str::<HostCall>(&wire).unwrap(), call);
+    }
+
+    /// Empty is a real answer — "this device has no signal connections" — and must survive the
+    /// round trip as itself rather than collapsing into something core reads as absent.
+    #[test]
+    fn an_empty_list_is_still_an_answer() {
+        let call = HostCall::Connections { connections: Vec::new() };
+        let back: HostCall = serde_json::from_str(&serde_json::to_string(&call).unwrap()).unwrap();
+        assert_eq!(back, call);
     }
 }
