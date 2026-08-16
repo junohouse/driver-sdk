@@ -1458,6 +1458,63 @@ mod group_tests {
 }
 
 #[cfg(test)]
+mod scene_tests {
+    use super::*;
+
+    struct Provider;
+
+    impl DriverModule for Provider {
+        fn on_command(
+            &self,
+            _inst: &mut Instance,
+            _proxy: LocalId,
+            _cmd: &str,
+            _args: &Args,
+        ) -> Vec<HostCall> {
+            Vec::new()
+        }
+
+        fn on_scene(&self, inst: &mut Instance, request: &SceneRequest) -> SceneResponse {
+            inst.scratch
+                .insert("seen_scene".into(), serde_json::json!(request.scene));
+            SceneResponse {
+                disposition: GroupDisposition::Handled,
+                status: serde_json::json!({ "ownership": request.ownership }),
+                ..Default::default()
+            }
+        }
+    }
+
+    #[test]
+    fn scene_dispatch_round_trips_result_and_provider_scratch() {
+        let response = dispatch(
+            &Provider,
+            Request::OnScene {
+                driver_id: "test.provider".into(),
+                request: SceneRequest {
+                    scene: 9,
+                    name: "Evening".into(),
+                    ownership: SceneOwnership::Juno,
+                    resource: None,
+                    members: Vec::new(),
+                    animation: SceneAnimation::default(),
+                    operation: SceneOperation::Status,
+                },
+                instance: Instance::new(1),
+            },
+        );
+        assert_eq!(
+            response.scene.unwrap().disposition,
+            GroupDisposition::Handled
+        );
+        assert_eq!(
+            response.scratch.get("seen_scene"),
+            Some(&serde_json::json!(9))
+        );
+    }
+}
+
+#[cfg(test)]
 mod connection_tests {
     use super::*;
 
