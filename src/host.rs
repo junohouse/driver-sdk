@@ -251,6 +251,104 @@ pub struct Instance {
     pub scratch: BTreeMap<String, Value>,
 }
 
+/// One physical member of a Juno logical group.
+///
+/// Core supplies the member's own driver instance and proxy state so the bridge driver can
+/// prove that a vendor-side group still has exactly the same members before using it. Secrets
+/// stay where they already live: inherited bridge properties are not copied into the member.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GroupMember {
+    pub device: DeviceId,
+    pub proxy: LocalId,
+    pub instance: Instance,
+    #[serde(default)]
+    pub state: Args,
+}
+
+/// What Core is asking a native-group provider to do.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+pub enum GroupOperation {
+    /// Describe the current link and vendor-side groups that are safe to select.
+    Status,
+    /// Link the logical group to an existing vendor-side resource without taking ownership.
+    Link { resource: String },
+    /// Create a new vendor-side resource owned by Juno.
+    Create,
+    /// Bring a Juno-owned resource's name and membership back in sync.
+    Synchronize,
+    /// Stop using the vendor-side resource. This never implies deleting it.
+    Detach,
+    /// Execute one proxy command through the linked vendor-side group.
+    Command {
+        command: String,
+        #[serde(default)]
+        args: Args,
+    },
+}
+
+/// A native grouped-control request. The provider instance passed to [`DriverModule::on_group`]
+/// is the bridge/controller that owns the connection; this structure describes the logical group
+/// and its physical children.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GroupRequest {
+    pub group: DeviceId,
+    pub name: String,
+    #[serde(default)]
+    pub state: Args,
+    pub members: Vec<GroupMember>,
+    pub operation: GroupOperation,
+}
+
+/// Whether Core should consider a native group request complete.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GroupDisposition {
+    /// Use Core's existing per-member behavior.
+    #[default]
+    Unsupported,
+    /// The request was accepted and any returned calls should be executed.
+    Handled,
+    /// Work was started but needs an asynchronous response before status changes.
+    Queued,
+    /// The provider supports groups but refused this request for the reported reason.
+    Refused,
+}
+
+/// Calls that update a physical member after one bridge-level request.
+///
+/// Core deliberately permits only state/notification/log calls in this list. Network I/O belongs
+/// to the provider's `calls`, preventing a group driver from using sibling devices as an escape
+/// hatch for extra connections.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GroupMemberCalls {
+    pub device: DeviceId,
+    #[serde(default)]
+    pub calls: Vec<HostCall>,
+    /// Updated per-device driver memory after the provider has applied the grouped command.
+    /// Omitted when the provider did not change it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scratch: Option<BTreeMap<String, Value>>,
+}
+
+/// Result of native group handling.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GroupResponse {
+    #[serde(default)]
+    pub disposition: GroupDisposition,
+    /// Driver-defined, non-secret status for API/UI presentation.
+    #[serde(default)]
+    pub status: Value,
+    /// Calls executed on the provider bridge/controller.
+    #[serde(default)]
+    pub calls: Vec<HostCall>,
+    /// Optimistic state updates for physical group members.
+    #[serde(default)]
+    pub members: Vec<GroupMemberCalls>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub problem: Option<String>,
+}
+
 impl Instance {
     pub fn new(device: DeviceId) -> Self {
         Instance {
@@ -286,6 +384,16 @@ pub trait DriverModule: Send + Sync {
         cmd: &str,
         args: &Args,
     ) -> Vec<HostCall>;
+
+    /// Use a bridge/controller's vendor-native grouped control for a Juno logical group.
+    ///
+    /// Core calls this only when the provider's manifest explicitly declares `group_control`,
+    /// and falls back to the normal per-member dispatch when the response is unsupported or
+    /// refused. Drivers built before this contract therefore keep their existing behavior.
+    fn on_group(&self, inst: &mut Instance, request: &GroupRequest) -> GroupResponse {
+        let _ = (inst, request);
+        GroupResponse::default()
+    }
 
     /// A command for one of the nodes this device presented. See [`HostCall::Present`].
     ///
@@ -392,6 +500,14 @@ pub enum Request {
         proxy: LocalId,
         cmd: String,
         args: Args,
+        instance: Instance,
+    },
+    /// Native grouped control, gated by `driver.group_control` in the provider manifest.
+    OnGroup {
+        #[serde(default)]
+        driver_id: String,
+        request: GroupRequest,
+        /// The provider bridge/controller instance.
         instance: Instance,
     },
     /// A command for a node, carrying the node's id and contract. Gated by the driver having
@@ -918,6 +1034,9 @@ pub struct Response {
     /// Flow state to hand back on the next call. Core stores it; the driver stays stateless.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<Value>,
+    /// Native group handling result, when the request was [`Request::OnGroup`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<GroupResponse>,
 }
 
 /// Run a request against any [`DriverModule`]. Shared by the in-process path and every
@@ -942,6 +1061,18 @@ pub fn dispatch(module: &dyn DriverModule, request: Request) -> Response {
         } => {
             let calls = module.on_command(&mut instance, proxy, &cmd, &args);
             (calls, Some(instance))
+        }
+        Request::OnGroup {
+            driver_id: _,
+            request,
+            mut instance,
+        } => {
+            let group = module.on_group(&mut instance, &request);
+            return Response {
+                scratch: instance.scratch,
+                group: Some(group),
+                ..Default::default()
+            };
         }
         Request::OnNodeCommand {
             driver_id: _,
@@ -1006,5 +1137,56 @@ pub fn dispatch(module: &dyn DriverModule, request: Request) -> Response {
         calls,
         scratch: instance.map(|i| i.scratch).unwrap_or_default(),
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod group_tests {
+    use super::*;
+
+    struct Provider;
+
+    impl DriverModule for Provider {
+        fn on_command(
+            &self,
+            _inst: &mut Instance,
+            _proxy: LocalId,
+            _cmd: &str,
+            _args: &Args,
+        ) -> Vec<HostCall> {
+            Vec::new()
+        }
+
+        fn on_group(&self, inst: &mut Instance, request: &GroupRequest) -> GroupResponse {
+            inst.scratch.insert("seen_group".into(), serde_json::json!(request.group));
+            GroupResponse {
+                disposition: GroupDisposition::Handled,
+                status: serde_json::json!({ "members": request.members.len() }),
+                ..Default::default()
+            }
+        }
+    }
+
+    #[test]
+    fn group_dispatch_round_trips_the_result_and_provider_scratch() {
+        let response = dispatch(
+            &Provider,
+            Request::OnGroup {
+                driver_id: "test.provider".into(),
+                request: GroupRequest {
+                    group: 7,
+                    name: "Lights".into(),
+                    state: Args::new(),
+                    members: Vec::new(),
+                    operation: GroupOperation::Status,
+                },
+                instance: Instance::new(1),
+            },
+        );
+        assert_eq!(
+            response.group.unwrap().disposition,
+            GroupDisposition::Handled
+        );
+        assert_eq!(response.scratch.get("seen_group"), Some(&serde_json::json!(7)));
     }
 }

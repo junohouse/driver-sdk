@@ -106,6 +106,13 @@ pub struct DriverMeta {
     /// alphabetical order, which is stable but says nothing.
     #[serde(default)]
     pub primary: bool,
+    /// This driver can replace a logical group's per-device fan-out with one native request.
+    ///
+    /// The flag is the compatibility gate for [`crate::DriverModule::on_group`]. Core never
+    /// sends that ABI request to an older driver unless its own manifest opts in, so adding the
+    /// request does not turn an otherwise compatible package into one that cannot be loaded.
+    #[serde(default)]
+    pub group_control: bool,
     /// Driver id of the bridge these devices live behind, if they do.
     ///
     /// A child inherits its parent's properties, so a Hue bulb does not carry its own copy of
