@@ -23,6 +23,20 @@ params.online = { type = "bool" }
 doc = "How many devices the bridge currently reports."
 params.count = { type = "u32" }
 
+# Something was paired to the hub itself, by somebody standing in front of it with the vendor's
+# own app. It is not in the project and nobody has said it should be — so this is an offer, not
+# an adoption, and core turns it into a prompt rather than a device.
+#
+# An event and not state on purpose: `count` already says how many children there are, and a
+# notification whose parameters all feed state keys would be filed as a repeat rather than kept
+# as something that happened. The vendor id is what a later adoption matches on; the name is
+# only for the sentence a person reads.
+[notifications.device_added]
+title = "New device on the hub"
+params.id = { type = "string" }
+params.name = { type = "string" }
+params.kind = { type = "string" }
+
 [state]
 online = { type = "bool" }
 count  = { type = "u32" }

@@ -1,0 +1,204 @@
+name = "voice_speaker"
+title = "Voice Speaker"
+category = "voice"
+description = """
+A wake-word endpoint. It listens, and when it hears its word it opens a voice path to whatever the
+house has been told to route it to.
+
+Not a `media_player`. A media player originates content and is a source in the signal graph; this
+originates *speech*, and the thing on the other end is a conversation rather than an audio stream. A
+room's `listen` should never resolve to one of these.
+
+Everything that makes one of these work is configuration the house owns, not settings somebody
+should be visiting a web page to change. Which word wakes it, where its voice goes, whether its
+microphone is live at all — a house with six of them has to be able to set those centrally, and a
+speaker that can only be configured on itself is a speaker nobody reconfigures.
+
+Deliberately says nothing about *how* voice is carried. The route is a name the controller resolves;
+whether that ends up as a socket, a LiveKit room or something not invented yet is the switching
+layer's business, and a contract that named a transport would have to change every time that did.
+"""
+
+[capabilities]
+# Which wake words this device actually has. Empty means the driver could not tell, which is not
+# the same as none — a speaker whose model list is unknown still wakes on whatever is flashed.
+wake_words = { type = "string", default = "", doc = "Comma-separated model names the device can arm" }
+has_adjustable_wake_word = { type = "bool", default = false, doc = "The armed word can be changed — see set_wake_word" }
+# Whether the word takes effect immediately or only after a restart. The difference matters to a
+# UI: one is a setting, the other is a setting plus an outage, and telling somebody it is live
+# when it is not is worse than making them wait.
+wake_word_needs_restart = { type = "bool", default = false }
+
+has_mute = { type = "bool", default = false, doc = "The microphone can be turned off" }
+# A hardware mute is a different promise from a software one, and worth distinguishing: one is a
+# switch in the audio path, the other is a driver choosing not to listen. Anybody who cares about
+# privacy cares which of the two they have.
+has_hardware_mute = { type = "bool", default = false }
+
+has_route = { type = "bool", default = false, doc = "Where its voice goes can be set — see set_route" }
+has_volume = { type = "bool", default = false, doc = "It speaks replies and the level can be set" }
+volume_max = { type = "u32", default = 100 }
+
+# A ring, a bar, a single LED — whatever it uses to show that it is listening. Declared because a
+# speaker with no indicator cannot be asked to dim one, and because in a bedroom the indicator is
+# the thing people complain about rather than the microphone.
+has_indicator = { type = "bool", default = false }
+indicator_max = { type = "u32", default = 100 }
+
+# Direction of arrival, in degrees, when the hardware works it out. A mic array knows roughly
+# where a voice came from, which is worth having: it is how a house tells one person talking from
+# a television doing the same thing.
+has_direction = { type = "bool", default = false }
+
+# Whether a copy of what this speaker hears can be pulled elsewhere to be listened to. Separate
+# from everything above because it is not a property of the speaker at all — it is a property of
+# whatever holds its audio, and a speaker whose switch cannot serve a copy has to say so.
+has_monitor = { type = "bool", default = false, doc = "A copy of what it hears can be listened to" }
+
+[commands.set_wake_word]
+title = "Wake word"
+requires = "has_adjustable_wake_word"
+doc = """
+Which word arms this speaker.
+
+Named from the device's own model list rather than a free string: the words a speaker can hear are
+whatever is flashed into it, and asking for one that is not there fails silently at the point where
+somebody is stood in front of it saying the word.
+
+Whether this is live immediately depends on `wake_word_needs_restart`. Where it does, the caller is
+expected to follow with `restart` — this command does not do it implicitly, because restarting a
+speaker in the middle of somebody using it is not a decision a setter should make.
+"""
+params.model = { type = "string" }
+
+[commands.set_route]
+title = "Voice route"
+requires = "has_route"
+doc = """
+Where this speaker's voice goes. A name the controller resolves, not an address.
+
+The indirection is the point. A speaker pointed at a hostname breaks when that machine moves, and
+every speaker in the house has to be revisited; a speaker pointed at a name keeps working because
+the thing that resolves it is the thing that knows. It is also what lets the same speaker be routed
+somewhere else — a different assistant, an intercom, nothing at all — without reflashing it.
+
+Empty unroutes it: it will still wake, and go nowhere.
+"""
+params.route = { type = "string" }
+
+[commands.mute]
+title = "Microphone"
+requires = "has_mute"
+doc = "Stop listening. A muted speaker does not wake, however clearly the word is said."
+params.muted = { type = "bool" }
+
+[commands.set_volume]
+title = "Volume"
+requires = "has_volume"
+params.level = { type = "u32", min = 0, max_cap = "volume_max" }
+
+[commands.set_indicator]
+title = "Indicator brightness"
+requires = "has_indicator"
+doc = """
+How bright the listening indicator is. Zero is off.
+
+Worth having reachable rather than fixed: the same brightness that reads as "on" across a kitchen
+is what somebody unplugs the thing over in a bedroom.
+"""
+params.level = { type = "u32", min = 0, max_cap = "indicator_max" }
+
+[commands.listen]
+title = "Listen in"
+requires = "has_monitor"
+doc = """
+Open a session to listen to what this speaker is hearing, and say how long it may stay open.
+
+The controller opens the session; whoever wants to hear it fetches the audio for themselves. That
+split is the whole design. A live microphone is not something to relay through the controller — it
+would put a continuous audio stream through the one process the house cannot afford to have busy,
+for a feature nobody uses twice a month — and it is not something any browser on the network should
+be able to switch on either. So: asking is a command here, and listening is a fetch somewhere else.
+
+Time-bounded rather than a toggle, because the failure that matters is a session nobody closed. A
+microphone left open by a tab somebody shut is exactly the thing this contract should make hard, and
+an expiry is what makes the default outcome "it stops" instead of "it stays on".
+
+Calling it again while a session is open extends it — that is how a listener that is still listening
+says so.
+"""
+params.minutes = { type = "u32", min = 1, max = 60 }
+
+[commands.stop_listening]
+title = "Stop listening"
+requires = "has_monitor"
+doc = "Close the session now rather than waiting for it to expire."
+
+[commands.restart]
+title = "Restart"
+doc = """
+Restart the speaker.
+
+Not cosmetic on this class of device: several settings — the wake word among them — are read once at
+boot, so a house that can set them but not restart can only half-configure a speaker.
+"""
+
+[notifications.woke]
+title = "Heard its wake word"
+doc = """
+The word was heard. Sent on every wake, whether or not the voice path went anywhere.
+
+Reported even when unrouted on purpose: "it hears me and nothing happens" and "it does not hear me"
+are the same complaint from the outside and completely different repairs, and this is what tells
+them apart.
+"""
+params.model = { type = "string" }
+
+[notifications.direction_changed]
+title = "Voice direction changed"
+requires = "has_direction"
+doc = "Roughly where the last speech came from, in degrees clockwise from the device's front."
+params.degrees = { type = "u32", min = 0, max = 359 }
+
+[notifications.wake_word_changed]
+title = "Wake word changed"
+requires = "has_adjustable_wake_word"
+doc = "What the device is armed with now. Sent after a successful set, and on discovery."
+params.model = { type = "string" }
+
+[notifications.route_changed]
+title = "Voice route changed"
+requires = "has_route"
+params.route = { type = "string" }
+
+[notifications.muted_changed]
+title = "Microphone changed"
+requires = "has_mute"
+params.muted = { type = "bool" }
+
+[notifications.listening_changed]
+title = "Listening session changed"
+requires = "has_monitor"
+doc = """
+Whether a session is open, and where the audio can be fetched from.
+
+The address comes back on the notification rather than being derived by whoever wants to listen: the
+thing serving the audio is the only party that knows where it is reachable, and a client that
+guessed would be wrong the first time a house ran two switches.
+"""
+params.open = { type = "bool" }
+params.url = { type = "string", optional = true }
+params.minutes = { type = "u32", optional = true }
+
+[notifications.online_changed]
+title = "Reachability changed"
+params.online = { type = "bool" }
+
+[state]
+wake_word = { title = "Wake word", type = "string", from = "model" }
+route     = { title = "Voice route", type = "string" }
+muted     = { title = "Microphone muted", type = "bool" }
+volume    = { title = "Volume", type = "u32", from = "level" }
+indicator = { title = "Indicator", type = "u32" }
+direction = { title = "Voice direction", type = "u32", from = "degrees" }
+online    = { title = "Reachable", type = "bool" }
