@@ -46,6 +46,13 @@ pub enum HostCall {
     /// the same arrangement as [`Self::Tx`] — core owns the socket, the TLS and the reconnect —
     /// with a topic instead of a stream position.
     Publish { topic: String, payload: String },
+    /// A Wake-on-LAN magic packet, broadcast on core's behalf.
+    ///
+    /// The one case a driver dials nobody: the device is asleep and there is no socket to hold
+    /// open or open, only a frame to put on the wire. Core owns the UDP broadcast for the same
+    /// reason it owns every other socket — a driver has no business doing its own network I/O —
+    /// and there is nothing to hold open afterward, unlike [`Self::Publish`] or [`Self::Tx`].
+    Wol { mac: String },
     /// Ask for a topic on this device's MQTT connection.
     ///
     /// Remembered by core and asked for again after a reconnect, because a subscription is state

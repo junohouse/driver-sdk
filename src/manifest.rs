@@ -348,6 +348,15 @@ pub struct TransportDecl {
     /// device (or inherited from its bridge) or the connection is refused.
     #[serde(default)]
     pub tls: bool,
+    /// Fixed MQTT CONNECT credentials, for a broker that wants a password but not a per-install
+    /// secret — the whole product line shares one, published in the vendor's own docs. Unlike
+    /// `[[property]]`, this is not something an installer sets or a pairing flow discovers: it
+    /// is the same string for every unit, so it belongs on the manifest next to `port`, not on
+    /// the device.
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
     /// How to recognise this hardware on a network it does not announce itself on.
     ///
     /// Set it and a controller with this driver *installed* sweeps its own network for `port`
@@ -777,6 +786,38 @@ mod id_tests {
     fn a_transport_without_a_probe_sweeps_nothing() {
         let m = manifest_with("roku.tv").unwrap();
         assert!(m.transport.iter().all(|t| t.probe.is_none()));
+    }
+
+    /// Fixed MQTT credentials belong on the manifest — the whole product line shares one
+    /// broker password — and have to survive a round trip through TOML same as `port` does.
+    #[test]
+    fn mqtt_credentials_on_a_transport_parse() {
+        let m: Manifest = toml::from_str(
+            r#"
+            [driver]
+            id = "test.tv"
+            name = "TV"
+            version = "1.0.0"
+            runtime = "wasm"
+            [[proxy]]
+            id = 1
+            type = "media_player"
+            [[transport]]
+            kind = "mqtt"
+            port = 36669
+            tls = true
+            username = "hisenseservice"
+            password = "multimqttservice"
+            "#,
+        )
+        .expect("manifest with mqtt credentials should parse");
+        let t = &m.transport[0];
+        assert_eq!(t.username.as_deref(), Some("hisenseservice"));
+        assert_eq!(t.password.as_deref(), Some("multimqttservice"));
+
+        // Absent for every transport that has never needed one — a Roku, a Denon.
+        let plain = manifest_with("roku.tv").unwrap();
+        assert!(plain.transport.iter().all(|t| t.username.is_none() && t.password.is_none()));
     }
 
     /// The default has to be "nothing", and a typo in the list has to be caught while somebody is
