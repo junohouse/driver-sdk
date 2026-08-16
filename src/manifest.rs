@@ -112,6 +112,13 @@ pub struct DriverMeta {
     /// request does not turn an otherwise compatible package into one that cannot be loaded.
     #[serde(default)]
     pub group_control: bool,
+    /// This driver can store and recall scenes on a bridge/controller.
+    ///
+    /// Like [`Self::group_control`], this is an additive ABI gate. Core only sends
+    /// [`crate::Request::OnScene`] to packages that opt in, so older drivers continue to load
+    /// without having to understand native scene requests.
+    #[serde(default)]
+    pub scene_control: bool,
     /// Driver id of the bridge these devices live behind, if they do.
     ///
     /// A child inherits its parent's properties, so a Hue bulb does not carry its own copy of
@@ -769,10 +776,19 @@ mod id_tests {
         )
         .expect("manifest with a probe should parse");
 
-        let probe = m.transport[0].probe.as_ref().expect("probe should be there");
+        let probe = m.transport[0]
+            .probe
+            .as_ref()
+            .expect("probe should be there");
         let send = probe.send.as_deref().unwrap();
-        assert!(send.ends_with('\n'), "probe line must end in a newline: {send:?}");
-        assert!(send.contains(r#""op":"hello""#), "quotes should be real: {send:?}");
+        assert!(
+            send.ends_with('\n'),
+            "probe line must end in a newline: {send:?}"
+        );
+        assert!(
+            send.contains(r#""op":"hello""#),
+            "quotes should be real: {send:?}"
+        );
         assert_eq!(probe.expect.as_deref(), Some(r#""op":"denied""#));
     }
 
@@ -813,7 +829,12 @@ mod id_tests {
 
         // Absent for every transport that has never needed one — a Roku, a Denon.
         let plain = manifest_with("roku.tv").unwrap();
-        assert!(plain.transport.iter().all(|t| t.username.is_none() && t.password.is_none()));
+        assert!(
+            plain
+                .transport
+                .iter()
+                .all(|t| t.username.is_none() && t.password.is_none())
+        );
     }
 
     /// The default has to be "nothing", and a typo in the list has to be caught while somebody is
@@ -883,7 +904,9 @@ mod id_tests {
         )
         .expect("parses");
         assert!(
-            typo.validate(&registry).iter().any(|e| e.contains("sensors")),
+            typo.validate(&registry)
+                .iter()
+                .any(|e| e.contains("sensors")),
             "a misspelled kind must be refused at install, not at the first inventory"
         );
 
@@ -902,12 +925,20 @@ mod id_tests {
             "#,
         )
         .expect("parses");
-        assert!(!empty.validate(&registry).is_empty(), "an empty list says nothing");
+        assert!(
+            !empty.validate(&registry).is_empty(),
+            "an empty list says nothing"
+        );
     }
 
     #[test]
     fn ordinary_ids_still_parse() {
-        for good in ["roku.tv", "signify.hue.bridge", "lutron.caseta.leap_dimmer", "a.b"] {
+        for good in [
+            "roku.tv",
+            "signify.hue.bridge",
+            "lutron.caseta.leap_dimmer",
+            "a.b",
+        ] {
             assert!(manifest_with(good).is_ok(), "`{good}` was rejected");
         }
     }
@@ -952,16 +983,30 @@ impl ActionDecl {
             }
             if let Some(n) = value.as_f64() {
                 if arg.min.is_some_and(|m| n < m) {
-                    errs.push(format!("`{}` is below the minimum of {}", arg.name, arg.min.unwrap()));
+                    errs.push(format!(
+                        "`{}` is below the minimum of {}",
+                        arg.name,
+                        arg.min.unwrap()
+                    ));
                 }
                 if arg.max.is_some_and(|m| n > m) {
-                    errs.push(format!("`{}` is above the maximum of {}", arg.name, arg.max.unwrap()));
+                    errs.push(format!(
+                        "`{}` is above the maximum of {}",
+                        arg.name,
+                        arg.max.unwrap()
+                    ));
                 }
             }
             if !arg.values.is_empty()
-                && value.as_str().is_some_and(|s| !arg.values.iter().any(|v| v == s))
+                && value
+                    .as_str()
+                    .is_some_and(|s| !arg.values.iter().any(|v| v == s))
             {
-                errs.push(format!("`{}` must be one of: {}", arg.name, arg.values.join(", ")));
+                errs.push(format!(
+                    "`{}` must be one of: {}",
+                    arg.name,
+                    arg.values.join(", ")
+                ));
             }
         }
 
@@ -973,6 +1018,10 @@ impl ActionDecl {
             }
         }
 
-        if errs.is_empty() { Ok(()) } else { Err(errs.join("; ")) }
+        if errs.is_empty() {
+            Ok(())
+        } else {
+            Err(errs.join("; "))
+        }
     }
 }

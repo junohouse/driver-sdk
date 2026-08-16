@@ -61,7 +61,10 @@ pub enum HostCall {
     /// Raw bytes at a control connection. `control: 0` means the driver's own network
     /// transport — the one case core owns directly, because there is no physical port to
     /// bind and no second driver in the path.
-    Tx { control: LocalId, data: Vec<u8> },
+    Tx {
+        control: LocalId,
+        data: Vec<u8>,
+    },
     /// An HTTP request. Core owns the client so drivers cannot each ship their own, and so
     /// timeouts, retries, and TLS are enforced in one place.
     Http(HttpRequest),
@@ -71,7 +74,10 @@ pub enum HostCall {
     /// beside it, and the topology is one connection per device with nothing shared. So this is
     /// the same arrangement as [`Self::Tx`] — core owns the socket, the TLS and the reconnect —
     /// with a topic instead of a stream position.
-    Publish { topic: String, payload: String },
+    Publish {
+        topic: String,
+        payload: String,
+    },
     /// The signal connections this device actually has, as it currently is.
     ///
     /// `[[connection]]` in a manifest is written before anybody has plugged anything in, so for
@@ -100,7 +106,9 @@ pub enum HostCall {
     /// open or open, only a frame to put on the wire. Core owns the UDP broadcast for the same
     /// reason it owns every other socket — a driver has no business doing its own network I/O —
     /// and there is nothing to hold open afterward, unlike [`Self::Publish`] or [`Self::Tx`].
-    Wol { mac: String },
+    Wol {
+        mac: String,
+    },
     /// Ask for a topic on this device's MQTT connection.
     ///
     /// Remembered by core and asked for again after a reconnect, because a subscription is state
@@ -110,7 +118,9 @@ pub enum HostCall {
     /// A call rather than a manifest field because the topics that matter are rarely constant: a
     /// panel answers on a topic named after the client id it issued during pairing, which nobody
     /// knows when the manifest is written.
-    Subscribe { topic: String },
+    Subscribe {
+        topic: String,
+    },
     /// Emit a proxy notification. Validated against the declared capabilities before it
     /// reaches anything else.
     Notify {
@@ -143,7 +153,9 @@ pub enum HostCall {
     /// Gated by the manifest's `[children] proxies`. A driver may only present kinds it declared,
     /// so a security panel cannot grow a `lock` the day its vendor's firmware learns a new word —
     /// see [`crate::manifest::ChildrenDecl`].
-    Present { nodes: Vec<Node> },
+    Present {
+        nodes: Vec<Node>,
+    },
     /// Aim these calls at one of this device's nodes rather than at the device itself.
     ///
     /// [`Self::Notify`] resolves its proxy against the device that returned it, which is exactly
@@ -154,7 +166,10 @@ pub enum HostCall {
     /// A node nobody has adopted is not an error — it is in the offers list and its reports are
     /// not state until somebody claims it — so calls for one are dropped quietly, the same as
     /// [`crate::adapter::Up::Push`] for an unadopted node.
-    ForNode { node: String, calls: Vec<HostCall> },
+    ForNode {
+        node: String,
+        calls: Vec<HostCall>,
+    },
     /// The hardware behind this device is gone, and the driver knows it first-hand.
     ///
     /// For a hub that reports its own removals — a Hue bridge pushes `delete` on its event stream
@@ -172,8 +187,13 @@ pub enum HostCall {
     ///
     /// `reason` is shown to whoever finds out afterwards, so it should say where the removal was
     /// observed rather than restate that something was deleted.
-    Gone { reason: String },
-    Log { level: String, msg: String },
+    Gone {
+        reason: String,
+    },
+    Log {
+        level: String,
+        msg: String,
+    },
 }
 
 /// One device a driver is offering, already mapped to Juno's semantics.
@@ -430,6 +450,124 @@ pub struct GroupResponse {
     pub problem: Option<String>,
 }
 
+/// One command stored for a member of a controller-native scene.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SceneAction {
+    pub command: String,
+    #[serde(default)]
+    pub args: Args,
+}
+
+/// One physical member of a controller-native scene.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SceneMember {
+    pub device: DeviceId,
+    pub proxy: LocalId,
+    pub instance: Instance,
+    #[serde(default)]
+    pub actions: Vec<SceneAction>,
+}
+
+/// A colour in a controller-run dynamic palette.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ScenePaletteColor {
+    /// CIE xy chromaticity, the vendor-neutral colour coordinates used by Hue's v2 scene API.
+    pub x: f64,
+    pub y: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brightness: Option<f64>,
+}
+
+/// A native effect requested for one light in a scene.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SceneEffect {
+    pub device: DeviceId,
+    pub effect: String,
+}
+
+/// Optional behavior that must be executed by the controller/lights, never by a Core update loop.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SceneAnimation {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub palette: Vec<ScenePaletteColor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speed: Option<f64>,
+    #[serde(default)]
+    pub auto_dynamic: bool,
+    #[serde(default)]
+    pub effects: Vec<SceneEffect>,
+}
+
+/// Who is allowed to change the provider-side scene resource.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneOwnership {
+    /// A scene created from Juno and recorded by the provider as Juno-owned.
+    #[default]
+    Juno,
+    /// A scene imported from the provider. It may be recalled but never changed or detached
+    /// provider-side by Juno.
+    Borrowed,
+}
+
+/// How a provider-native scene should be recalled.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneRecall {
+    #[default]
+    Static,
+    Dynamic,
+}
+
+/// What Core is asking a native-scene provider to do.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+pub enum SceneOperation {
+    Status,
+    /// Create the scene if it has not been published, otherwise synchronize it. The provider
+    /// must refuse unless its local ownership record proves the existing resource is Juno-owned.
+    Synchronize,
+    /// Stop using a Juno-owned provider resource locally. This never implies deleting it.
+    Detach,
+    Recall {
+        mode: SceneRecall,
+    },
+}
+
+/// A native-scene request. `resource` is set for a borrowed import; Juno-created scenes rely on
+/// the provider's bridge-scoped ownership record instead of accepting an arbitrary writable id.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SceneRequest {
+    pub scene: u32,
+    pub name: String,
+    pub ownership: SceneOwnership,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource: Option<String>,
+    #[serde(default)]
+    pub members: Vec<SceneMember>,
+    #[serde(default)]
+    pub animation: SceneAnimation,
+    pub operation: SceneOperation,
+}
+
+/// Result of native scene handling. Network calls belong to the controller; member calls are
+/// restricted by Core to state, notification, and log updates just like native groups.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SceneResponse {
+    #[serde(default)]
+    pub disposition: GroupDisposition,
+    #[serde(default)]
+    pub status: Value,
+    #[serde(default)]
+    pub calls: Vec<HostCall>,
+    #[serde(default)]
+    pub members: Vec<GroupMemberCalls>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub problem: Option<String>,
+}
+
 impl Instance {
     pub fn new(device: DeviceId) -> Self {
         Instance {
@@ -474,6 +612,15 @@ pub trait DriverModule: Send + Sync {
     fn on_group(&self, inst: &mut Instance, request: &GroupRequest) -> GroupResponse {
         let _ = (inst, request);
         GroupResponse::default()
+    }
+
+    /// Store, describe, or recall a scene on the bridge/controller.
+    ///
+    /// Core calls this only when the provider opts into `driver.scene_control`. Dynamic recalls
+    /// are one native request; a provider must never implement them as a repeated REST loop.
+    fn on_scene(&self, inst: &mut Instance, request: &SceneRequest) -> SceneResponse {
+        let _ = (inst, request);
+        SceneResponse::default()
     }
 
     /// A command for one of the nodes this device presented. See [`HostCall::Present`].
@@ -550,7 +697,6 @@ pub trait DriverModule: Send + Sync {
     }
 }
 
-
 // ---------------------------------------------------------------------------------------
 // The plugin boundary
 // ---------------------------------------------------------------------------------------
@@ -588,6 +734,14 @@ pub enum Request {
         #[serde(default)]
         driver_id: String,
         request: GroupRequest,
+        /// The provider bridge/controller instance.
+        instance: Instance,
+    },
+    /// Native scene handling, gated by `driver.scene_control` in the provider manifest.
+    OnScene {
+        #[serde(default)]
+        driver_id: String,
+        request: SceneRequest,
         /// The provider bridge/controller instance.
         instance: Instance,
     },
@@ -791,6 +945,18 @@ pub struct ImportedScene {
     #[serde(default)]
     pub rooms: Vec<String>,
     pub steps: Vec<ImportedAction>,
+    /// Provider-side scene identity. Its presence makes this a borrowed, read-only resource in
+    /// Core: Juno may recall it but must never update or delete it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native: Option<ImportedSceneResource>,
+}
+
+/// The provider-side identity and recall capabilities of an imported scene.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ImportedSceneResource {
+    pub resource: String,
+    #[serde(default)]
+    pub dynamic_palette: bool,
 }
 
 /// One thing an [`ImportedRule`] does.
@@ -1118,6 +1284,9 @@ pub struct Response {
     /// Native group handling result, when the request was [`Request::OnGroup`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<GroupResponse>,
+    /// Native scene handling result, when the request was [`Request::OnScene`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene: Option<SceneResponse>,
 }
 
 /// Run a request against any [`DriverModule`]. Shared by the in-process path and every
@@ -1152,6 +1321,18 @@ pub fn dispatch(module: &dyn DriverModule, request: Request) -> Response {
             return Response {
                 scratch: instance.scratch,
                 group: Some(group),
+                ..Default::default()
+            };
+        }
+        Request::OnScene {
+            driver_id: _,
+            request,
+            mut instance,
+        } => {
+            let scene = module.on_scene(&mut instance, &request);
+            return Response {
+                scratch: instance.scratch,
+                scene: Some(scene),
                 ..Default::default()
             };
         }
@@ -1239,7 +1420,8 @@ mod group_tests {
         }
 
         fn on_group(&self, inst: &mut Instance, request: &GroupRequest) -> GroupResponse {
-            inst.scratch.insert("seen_group".into(), serde_json::json!(request.group));
+            inst.scratch
+                .insert("seen_group".into(), serde_json::json!(request.group));
             GroupResponse {
                 disposition: GroupDisposition::Handled,
                 status: serde_json::json!({ "members": request.members.len() }),
@@ -1268,7 +1450,10 @@ mod group_tests {
             response.group.unwrap().disposition,
             GroupDisposition::Handled
         );
-        assert_eq!(response.scratch.get("seen_group"), Some(&serde_json::json!(7)));
+        assert_eq!(
+            response.scratch.get("seen_group"),
+            Some(&serde_json::json!(7))
+        );
     }
 }
 
@@ -1301,7 +1486,9 @@ mod connection_tests {
     /// round trip as itself rather than collapsing into something core reads as absent.
     #[test]
     fn an_empty_list_is_still_an_answer() {
-        let call = HostCall::Connections { connections: Vec::new() };
+        let call = HostCall::Connections {
+            connections: Vec::new(),
+        };
         let back: HostCall = serde_json::from_str(&serde_json::to_string(&call).unwrap()).unwrap();
         assert_eq!(back, call);
     }
