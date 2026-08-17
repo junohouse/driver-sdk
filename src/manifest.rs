@@ -125,6 +125,20 @@ pub struct DriverMeta {
     /// the bridge address — it reads the one the bridge holds. That is the whole point: a
     /// bridge that moves to a new IP is edited once.
     pub parent: Option<String>,
+    /// Which column of the app catalog this driver reads, when it launches apps at all.
+    ///
+    /// `roku`, `apple_tv`, `android_tv`, `fire_tv`, `webos`, `tizen` — the keys in
+    /// [junohouse/apps](https://github.com/junohouse/apps). Core looks the requested app up
+    /// there and passes `launch_id` on the `launch_app` command, so a driver does not carry its
+    /// own table of channel numbers and bundle ids, and a correction reaches houses without any
+    /// driver being rebuilt.
+    ///
+    /// Optional, and most drivers want nothing to do with it: a box that reports its own
+    /// installed apps already knows better than any table, and should keep using what it read
+    /// from the device. This is for the ones that cannot — a set whose local API has no endpoint
+    /// listing what is installed — and as a fallback for an app a device did not mention.
+    #[serde(default)]
+    pub app_platform: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

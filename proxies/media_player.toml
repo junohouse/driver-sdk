@@ -243,6 +243,20 @@ online    = { type = "bool" }
 doc = "Open an installed application. The valid names are whatever `apps` reports for this device."
 requires = "has_apps"
 params.app = { type = "string", values_from = "apps" }
+params.launch_id = { type = "string", optional = true, doc = """
+The string this platform uses for `app`, from the shared app catalog — a Roku channel number, an
+Android package, a bundle id, whatever that platform's launch call takes.
+
+Filled in by core, never by a caller: a driver whose manifest declares `[driver] app_platform`
+gets this alongside `app`, looked up under whichever spelling was asked for. That is what keeps a
+table of channel numbers and bundle ids out of every driver, and lets a correction reach houses
+without rebuilding one — see https://github.com/junohouse/apps.
+
+Absent means the catalog had no id for this platform, which is ordinary. **A device's own list
+still wins:** a box that reported what it has installed knows the truth about itself, where the
+catalog knows only what a box of this kind can usually run. Use this when the device said
+nothing — a set whose local API cannot list its apps at all, or an app it did not mention.
+""" }
 params.content_id = { type = "string", optional = true, doc = """
 Deep link to a specific title. Ignored by a device that does not declare `has_deep_link`.
 
