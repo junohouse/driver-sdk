@@ -100,6 +100,16 @@ pub enum HostCall {
     Connections {
         connections: Vec<ConnectionDecl>,
     },
+    /// Import or refresh provider-owned scenes discovered by an already-adopted controller.
+    ///
+    /// This is deliberately a one-way snapshot into Core. It cannot ask the provider to create,
+    /// update, or delete anything; Core stores each entry as a borrowed read-only handle and may
+    /// only recall it through [`crate::SceneOperation::Recall`]. `steps` identify installed child
+    /// devices by stable, non-secret properties because a driver never knows Core's numeric device
+    /// ids. Juno-owned provider scenes must not be included.
+    BorrowedScenes {
+        scenes: Vec<BorrowedSceneSnapshot>,
+    },
     /// A Wake-on-LAN magic packet, broadcast on core's behalf.
     ///
     /// The one case a driver dials nobody: the device is asleep and there is no socket to hold
@@ -957,6 +967,35 @@ pub struct ImportedSceneResource {
     pub resource: String,
     #[serde(default)]
     pub dynamic_palette: bool,
+}
+
+/// A provider-owned scene discovered after its controller was already adopted.
+///
+/// Setup-time [`ImportedScene`] actions point into the candidates being adopted. A running
+/// controller has no such list, so each step instead names the stable device properties the
+/// driver originally installed (for example a Hue light resource id). Core resolves those only
+/// among children of the controller that emitted the snapshot.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct BorrowedSceneSnapshot {
+    pub title: String,
+    pub resource: String,
+    #[serde(default)]
+    pub dynamic_palette: bool,
+    #[serde(default)]
+    pub steps: Vec<BorrowedSceneStep>,
+}
+
+/// One installed-device state represented by a borrowed provider scene.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct BorrowedSceneStep {
+    /// Stable device properties that must all match one child of the reporting controller.
+    #[serde(default)]
+    pub properties: BTreeMap<String, Value>,
+    #[serde(default)]
+    pub proxy: LocalId,
+    pub command: String,
+    #[serde(default)]
+    pub args: Args,
 }
 
 /// One thing an [`ImportedRule`] does.

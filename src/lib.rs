@@ -79,12 +79,12 @@ pub mod host;
 pub mod sddp;
 
 pub use host::{
-    Accept, Args, Candidate, Connect, ConnectionDecl, DeviceId, Direction, DriverModule, Field,
-    GroupDisposition, GroupMember, GroupMemberCalls, GroupOperation, GroupRequest, GroupResponse,
-    HostCall, HttpRequest, ImportedAction, ImportedRule, ImportedScene, ImportedSceneResource,
-    Instance, Node, PickRow, Request, Response, SceneAction, SceneAnimation, SceneEffect,
-    SceneMember, SceneOperation, SceneOwnership, ScenePaletteColor, SceneRecall, SceneRequest,
-    SceneResponse, SetupStep, dispatch,
+    Accept, Args, BorrowedSceneSnapshot, BorrowedSceneStep, Candidate, Connect, ConnectionDecl,
+    DeviceId, Direction, DriverModule, Field, GroupDisposition, GroupMember, GroupMemberCalls,
+    GroupOperation, GroupRequest, GroupResponse, HostCall, HttpRequest, ImportedAction,
+    ImportedRule, ImportedScene, ImportedSceneResource, Instance, Node, PickRow, Request, Response,
+    SceneAction, SceneAnimation, SceneEffect, SceneMember, SceneOperation, SceneOwnership,
+    ScenePaletteColor, SceneRecall, SceneRequest, SceneResponse, SetupStep, dispatch,
 };
 pub use serde_json::{Value, json};
 
