@@ -1,0 +1,46 @@
+name = "navigator"
+title = "Navigator"
+category = "interface"
+description = """
+A screen somebody controls the house from: a Juno OSD on a television, a wall panel, a tablet in a
+dock. The thing Control4 calls a navigator, and the reason the word is used here rather than
+"display" — a television *is* a display and is a different object entirely, one this drives.
+
+It controls; it is not controlled. Nothing in a house asks a navigator to do something, so this
+contract has almost no commands: what it is for is being **placed**. A screen in the kitchen
+should open on the kitchen, and the only way it can know that is for somebody to have said which
+room it is in — which is exactly what putting a device in a room already means everywhere else in
+Juno. Nothing new had to be invented for it; a navigator is a device, and devices live in rooms.
+
+The identity is the MAC, in `serial`. Two Pis flashed from one card image are identical in every
+other respect — same hostname scheme, same software, same everything — so the burned-in address is
+the one thing that distinguishes them, and it is what a room assignment has to survive being keyed
+on. Reflash the card and the assignment still holds; swap the SD into a different Pi and it
+correctly does not.
+
+There are no commands at all, which is deliberate rather than unfinished — `keypad` is the same
+shape for the same reason. A navigator would want an `identify` ("say which one you are, so I can
+tell which room I am standing in"), and it is not here because the screen has no control channel
+yet to receive one. A contract that claimed it would be a contract that lies.
+"""
+
+[capabilities]
+has_cec = { type = "bool", default = false, doc = "Can drive a television over HDMI-CEC — power, input, volume. True for a Pi wired into a set's HDMI, false for a tablet." }
+
+[notifications.online_changed]
+title = "Reachability changed"
+params.online = { type = "bool" }
+
+[notifications.showing_changed]
+title = "What is on screen changed"
+doc = "Which room the screen is showing, or nothing when it is on the house view."
+params.room = { type = "string" }
+
+[state]
+online = { title = "Reachable", type = "bool" }
+# Where the screen is, as opposed to what it is showing. Set by placing the device in a room like
+# any other; read back by the screen itself so it opens where it lives.
+showing = { title = "Showing", type = "string" }
+address = { title = "Address", type = "string" }
+serial = { title = "MAC", type = "string" }
+model = { title = "Model", type = "string" }
