@@ -1,0 +1,145 @@
+name = "remote"
+title = "Remote"
+category = "av"
+description = """
+A handheld remote, and the one input whose buttons already mean something.
+
+This is the distinction from `keypad`, and the whole reason it is a separate contract. A keypad
+reports that key 3 was clicked, and key 3 means whatever a rule says it means — which is correct
+for a Pico on a wall, where the buttons are blank and the intent lives in the project. A remote is
+the opposite: it has `Play`, `Vol +` and a d-pad printed on it, the person holding it already knows
+what they will do, and making somebody author fifty rules to say so is the programming step this
+contract exists to delete.
+
+So a remote emits **named commands from a fixed vocabulary**, and the vocabulary is deliberately
+the command names `room`, `media_player` and `tv` already use. A `volume_up` from a remote bound to
+the Living Room is `room::volume_up` in the Living Room — the pathfinder already knows which device
+owns that room's volume, and it changes when somebody watches something else. Nothing about the
+remote had to be reprogrammed, because the remote never named a device.
+
+That is the property worth protecting: a remote addresses a **room**, never a device. Point it at a
+device and it is a learning remote with a macro list, which is the thing every one of these systems
+was built to replace.
+
+Not every button is universal, and pretending otherwise is how contracts like this go wrong. A
+softkey, a coloured teletext key and a "List" button mean nothing outside the box that shipped
+them, so they do not get forced into the enum — they arrive as `custom`, carrying the label the
+device prints on itself, and a rule binds them exactly as it would a keypad's key. One contract,
+two honest halves: what the house can route on its own, and what still needs somebody to say.
+
+Like `keypad`, this resolves to no commands at all. There is nothing to ask of a remote.
+"""
+
+[capabilities]
+has_transport = { type = "bool", default = false, doc = "Play, pause, stop and the scan/skip keys" }
+has_dpad      = { type = "bool", default = false, doc = "Arrows and a select key" }
+has_numeric   = { type = "bool", default = false, doc = "Digits 0-9, and usually `enter`" }
+has_channel   = { type = "bool", default = false, doc = "Channel up/down, which is not the same as skip — see `channel_up`" }
+has_volume    = { type = "bool", default = false }
+has_power     = { type = "bool", default = false, doc = "Discrete on and off keys rather than a single toggle" }
+has_menu      = { type = "bool", default = false, doc = "Menu, guide, info, exit — the keys that open something" }
+has_dimming   = { type = "bool", default = false, doc = """
+Brighter and dimmer keys. A four-button dimmer's middle pair, and the reason they are here rather
+than folded into volume: `room::dim_up` is relative to wherever each light already is, which is the
+one thing an absolute level cannot express — see that command's note. A remote with `has_repeat`
+gets a ramp from the same rule for free.
+""" }
+has_hold      = { type = "bool", default = false, doc = "Tells a held key from a tapped one, which is what turns a volume step into a ramp" }
+has_repeat    = { type = "bool", default = false, doc = "Reports repeatedly while a key is held" }
+has_battery   = { type = "bool", default = false }
+custom_labels = { type = "string", default = "", doc = """
+What the non-universal keys are called, comma separated, in the order the device reports them —
+"Soft Lft,Red,Green,List". These are the labels a `custom` notification carries, and a rule editor
+offers them by name rather than by index.
+""" }
+
+# A remote takes no commands, for the same reason a keypad does not: it is an input. Stated rather
+# than left implicit, because the empty command set is load-bearing — a consumer that offered a
+# control for one of these would be controlling whatever it happened to be pointed at.
+
+[notifications.command]
+title = "Command"
+doc = """
+A button with a universal meaning was used. This is the notification the house routes without being
+told how: `command` names an intent that `room`, `media_player` or `tv` already accepts, so it
+resolves against whatever the room is currently doing.
+
+`action` is what was done to the key, and it matters as much as which key it was. A `click` on
+`volume_up` is a step; a `hold` on it is a ramp, and the consumer answers that with
+`media_player::hold { what = "volume_up" }` rather than by re-sending forty steps — see that
+command's note on why those are not the same thing. `release` closes a hold; `repeat` is for
+hardware that streams while a key is down, which a step-per-tick rule wants and a ramp does not.
+
+The vocabulary is closed on purpose. An open string would mean every consumer carrying a table of
+spellings, and the first remote that said `vol_up` instead of `volume_up` would fail silently at
+the far end. A button that does not fit sends `custom` instead, which is exactly what that is for.
+"""
+params.command = { type = "string", values = [
+	"play", "pause", "play_pause", "stop", "record",
+	"skip_forward", "skip_back", "scan_forward", "scan_reverse",
+	"up", "down", "left", "right", "select",
+	"back", "exit", "menu", "home", "guide", "info",
+	"volume_up", "volume_down", "mute_toggle",
+	"dim_up", "dim_down",
+	"channel_up", "channel_down", "previous_channel",
+	"power_on", "power_off", "power_toggle",
+	"enter",
+], values_require = {
+	play = "has_transport", pause = "has_transport", play_pause = "has_transport",
+	stop = "has_transport", record = "has_transport",
+	skip_forward = "has_transport", skip_back = "has_transport",
+	scan_forward = "has_transport", scan_reverse = "has_transport",
+	up = "has_dpad", down = "has_dpad", left = "has_dpad", right = "has_dpad",
+	select = "has_dpad",
+	back = "has_menu", exit = "has_menu", menu = "has_menu", home = "has_menu",
+	guide = "has_menu", info = "has_menu",
+	volume_up = "has_volume", volume_down = "has_volume", mute_toggle = "has_volume",
+	dim_up = "has_dimming", dim_down = "has_dimming",
+	channel_up = "has_channel", channel_down = "has_channel",
+	previous_channel = "has_channel",
+	power_on = "has_power", power_off = "has_power", power_toggle = "has_power",
+	enter = "has_numeric",
+} }
+params.action = { type = "string", values = ["click", "double", "hold", "release", "repeat"] }
+
+[notifications.digit]
+title = "Digit"
+doc = """
+A number key. Separate from `command` because a digit is a value rather than an intent — ten more
+entries in that enum would say the same thing ten times, and a consumer that wants to build a
+channel number wants to accumulate an integer, not switch on `"digit_7"`.
+"""
+requires = "has_numeric"
+params.value = { type = "u8", min = 0, max = 9 }
+params.action = { type = "string", values = ["click", "double", "hold", "release", "repeat"] }
+
+[notifications.custom]
+title = "Other button"
+doc = """
+A button with no universal meaning: a softkey, a coloured key, a vendor's own function. It carries
+the label the device prints, so a rule reads "Red" rather than "key 46", and an index so two keys
+printed the same are still distinguishable.
+
+This is the escape hatch that keeps the `command` vocabulary honest. Without it, every device-
+specific button would either be dropped or crammed into the enum under a name nothing else uses —
+and an enum that means something different per device is a string with extra steps.
+"""
+params.index  = { type = "u32", min = 1, doc = "Position in `custom_labels`, from 1." }
+params.label  = { type = "string", doc = "What the device prints on it." }
+params.action = { type = "string", values = ["click", "double", "hold", "release", "repeat"] }
+
+[notifications.battery_changed]
+title = "Battery changed"
+requires = "has_battery"
+params.percent = { type = "u8", min = 0, max = 100 }
+
+[notifications.online_changed]
+title = "Reachability changed"
+params.online = { type = "bool" }
+
+[state]
+# The same reasoning as `keypad`: a remote has no state a tile can show, and a tile showing nothing
+# reads as broken. What it last did, in words somebody can check against the button they pressed.
+last_command = { title = "Last command", type = "string", doc = "What the remote last sent, action included — \"volume_up hold\". A remote that is working and a remote that is not look identical until this is on screen." }
+battery      = { title = "Battery", type = "u8", from = "percent" }
+online       = { title = "Reachable", type = "bool" }
