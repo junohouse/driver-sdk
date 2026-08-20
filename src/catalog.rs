@@ -115,6 +115,18 @@ pub struct Release {
     pub sha256: String,
     #[serde(default)]
     pub size: u64,
+    /// The driver repository's commit this was built from.
+    ///
+    /// What "which build is this" means while nothing is released. Every driver here tracks
+    /// `main` and cuts no tags — see the note in core's CLAUDE.md about what tagging cost —
+    /// so the `version` in a manifest stays whatever somebody last typed and says nothing
+    /// about whether an installed copy is current. The commit does, exactly, and it is the
+    /// only thing that does.
+    ///
+    /// Empty when the build came from somewhere without one: a sideload, or a package built
+    /// by hand. Then "is this current" is unanswerable, which is the honest answer.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub commit: String,
 }
 
 /// What a discovery probe saw on the network.

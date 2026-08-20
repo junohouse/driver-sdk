@@ -138,6 +138,8 @@ fn run() -> anyhow::Result<()> {
                         core_req: m.driver.min_core.clone().unwrap_or_default(),
                         url: flag("--url").unwrap_or_default(),
                         sha256: flag("--sha256").unwrap_or_default(),
+                        // What build this is, while nothing is released — see `Release::commit`.
+                        commit: flag("--commit").unwrap_or_default(),
                         size,
                     }],
                 })
