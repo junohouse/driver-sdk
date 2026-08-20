@@ -97,6 +97,12 @@ pub struct Param {
     /// State key holding this parameter's valid values, when they are discovered from the
     /// device rather than fixed in the contract. A Roku's installed apps are not knowable
     /// when the proxy is written, but the assistant still has to be told what it can ask for.
+    ///
+    /// `"connections"` is reserved and does not name a state key: it means the inputs this
+    /// device reported, which is where `set_input`'s choices come from. They are not state —
+    /// they arrive as [`HostCall::Connections`](crate::HostCall::Connections) — and they are
+    /// ids rather than words, so whatever resolves them supplies the names too. A television
+    /// asked for an input by number should offer HDMI 2, not 1002.
     pub values_from: Option<String>,
     #[serde(default)]
     pub doc: String,

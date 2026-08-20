@@ -30,7 +30,7 @@ supports_arc        = { type = "bool", default = false }
 
 [commands.set_input]
 doc = "Select the input carrying a given signal connection. Issued by the pathfinder, not usually by a person."
-params.connection = { type = "u32", doc = "Signal connection id from this driver's manifest" }
+params.connection = { type = "u32", values_from = "connections", doc = "Signal connection id. The choices are the inputs this set reported, not the ones the manifest guessed." }
 
 [commands.pulse_input]
 doc = "Cycle to the next input. The fallback when has_discrete_input is false."
