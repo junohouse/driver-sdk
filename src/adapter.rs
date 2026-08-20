@@ -9,7 +9,7 @@
 //! them here means both ends are the same definition.
 //!
 //! Every type derives **both** `Serialize` and `Deserialize`, because each side reads what the
-//! other writes: the controller deserialises [`Up`] and serialises [`Down`], and an adapter
+//! other writes: the controller deserializes [`Up`] and serializes [`Down`], and an adapter
 //! does the mirror image.
 
 use crate::host::{Args, HostCall};
@@ -28,7 +28,7 @@ pub const PROTOCOL: u32 = 1;
 
 /// Adapter to core. One JSON object per line on stdout.
 ///
-/// Deliberately **not** `deny_unknown_fields`, and an unrecognised tag is logged and dropped
+/// Deliberately **not** `deny_unknown_fields`, and an unrecognized tag is logged and dropped
 /// rather than fatal — the opposite of [`crate::driver::manifest::Manifest`]. A manifest is
 /// written by a person and a typo there should fail loudly at install. This is written by a
 /// program on the other side of a version boundary, and a newer adapter adding a field must not
@@ -118,7 +118,7 @@ pub use crate::host::Node;
 /// Core to adapter. One JSON object per line on stdin.
 ///
 /// Absent fields default rather than failing the frame. This direction used to be
-/// serialise-only, so it never had to read anything; now that both sides share one definition
+/// serialize-only, so it never had to read anything; now that both sides share one definition
 /// it does, and a controller a version behind must not produce frames an adapter refuses.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "f", rename_all = "snake_case")]

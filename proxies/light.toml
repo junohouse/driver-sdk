@@ -1,12 +1,12 @@
 name = "light"
 title = "Light"
 category = "lighting"
-description = "A controllable light load — switched, dimmed, tunable, or full colour."
+description = "A controllable light load — switched, dimmed, tunable, or full color."
 
 [capabilities]
 dimmer                = { type = "bool", default = false, doc = "Supports levels between off and on" }
-supports_color        = { type = "bool", default = false, doc = "Full hue/saturation colour" }
-supports_cct          = { type = "bool", default = false, doc = "Tunable correlated colour temperature" }
+supports_color        = { type = "bool", default = false, doc = "Full hue/saturation color" }
+supports_cct          = { type = "bool", default = false, doc = "Tunable correlated color temperature" }
 cct_min               = { type = "u32",  default = 2700 }
 cct_max               = { type = "u32",  default = 6500 }
 supports_ramp         = { type = "bool", default = false, doc = "Honours a ramp time on level changes" }
@@ -42,14 +42,14 @@ title = "Stop dimming"
 requires = "dimmer"
 
 [commands.set_color]
-title = "Set colour"
+title = "Set color"
 requires = "supports_color"
 params.hue     = { type = "f32", min = 0.0, max = 360.0 }
 params.sat     = { type = "f32", min = 0.0, max = 100.0 }
 params.ramp_ms = { type = "u32", optional = true }
 
 [commands.set_cct]
-title = "Set colour temperature"
+title = "Set color temperature"
 requires = "supports_cct"
 params.kelvin  = { type = "u32", min = 1000, max = 10000, min_cap = "cct_min", max_cap = "cct_max" }
 params.ramp_ms = { type = "u32", optional = true }
@@ -65,13 +65,13 @@ doc = "Mid-ramp progress. Rate-limited by the driver; core does not persist thes
 params.level = { type = "u8", min = 0, max = 100 }
 
 [notifications.color_changed]
-title = "Colour changed"
+title = "Color changed"
 requires = "supports_color"
 params.hue = { type = "f32" }
 params.sat = { type = "f32" }
 
 [notifications.cct_changed]
-title = "Colour temperature changed"
+title = "Color temperature changed"
 requires = "supports_cct"
 params.kelvin = { type = "u32" }
 
@@ -106,5 +106,5 @@ level  = { title = "Brightness", type = "u8" }
 on     = { title = "On", type = "bool", truthy_of = "level" }
 hue    = { title = "Hue", type = "f32" }
 sat    = { title = "Saturation", type = "f32" }
-kelvin = { title = "Colour temperature", type = "u32" }
+kelvin = { title = "Color temperature", type = "u32" }
 online = { title = "Reachable", type = "bool" }

@@ -374,7 +374,7 @@ pub struct TransportDecl {
     pub username: Option<String>,
     #[serde(default)]
     pub password: Option<String>,
-    /// How to recognise this hardware on a network it does not announce itself on.
+    /// How to recognize this hardware on a network it does not announce itself on.
     ///
     /// Set it and a controller with this driver *installed* sweeps its own network for `port`
     /// when a survey runs, so the address does not have to be found and typed in. Leave it

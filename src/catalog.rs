@@ -132,7 +132,7 @@ pub struct Discovered {
     pub mac: Option<String>,
 }
 
-/// Normalise a MAC or OUI to bare uppercase hex so `FC:F1:52`, `fc-f1-52` and `FCF152` all
+/// Normalize a MAC or OUI to bare uppercase hex so `FC:F1:52`, `fc-f1-52` and `FCF152` all
 /// compare equal. Vendors are not consistent and neither are driver authors.
 fn norm_mac(s: &str) -> String {
     s.chars()

@@ -227,7 +227,7 @@ pub struct Node {
     /// What *this particular device* can do, resolved against the contract named by `kind`.
     ///
     /// Per node, and that is the whole point rather than a refinement. A mesh is not a fleet of
-    /// one product: a plain white bulb and an extended-colour bulb are both `light`, and if they
+    /// one product: a plain white bulb and an extended-color bulb are both `light`, and if they
     /// resolve to the same contract then `set_cct` appears in the UI, in the automation editor
     /// and in the assistant's tool surface for a bulb that cannot do it — and `validate_call`
     /// waves it through to a driver that fails in silence. Somebody then spends an evening
@@ -453,7 +453,7 @@ pub struct GroupResponse {
     /// Calls executed on the provider bridge/controller.
     #[serde(default)]
     pub calls: Vec<HostCall>,
-    /// Optimistic state updates for physical group members.
+    /// Optimiztic state updates for physical group members.
     #[serde(default)]
     pub members: Vec<GroupMemberCalls>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -478,10 +478,10 @@ pub struct SceneMember {
     pub actions: Vec<SceneAction>,
 }
 
-/// A colour in a controller-run dynamic palette.
+/// A color in a controller-run dynamic palette.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ScenePaletteColor {
-    /// CIE xy chromaticity, the vendor-neutral colour coordinates used by Hue's v2 scene API.
+    /// CIE xy chromaticity, the vendor-neutral color coordinates used by Hue's v2 scene API.
     pub x: f64,
     pub y: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -714,7 +714,7 @@ pub trait DriverModule: Send + Sync {
 /// What core asks a separately-compiled driver to do.
 ///
 /// JSON in, JSON out. Rust has no stable ABI, so passing trait objects across a `dylib`
-/// boundary is undefined behaviour waiting to happen; a serialised call is slower and
+/// boundary is undefined behavior waiting to happen; a serialized call is slower and
 /// completely safe. At the rate a house generates commands, the difference is unmeasurable —
 /// and this is the same shape the WASM runtime will use, so drivers do not change when it
 /// arrives.
@@ -784,7 +784,7 @@ pub enum Request {
     },
     /// Features the driver parsed but does not execute — reported at install time.
     Unsupported,
-    /// Look for devices of this kind on the network. The driver knows how to recognise its
+    /// Look for devices of this kind on the network. The driver knows how to recognize its
     /// own hardware; core does not, and must not.
     Discover {
         /// Which of the package's drivers this is for.
@@ -935,7 +935,7 @@ pub struct ImportedRule {
 ///
 /// The other half of what a commissioned hub knows. Somebody sat and got a room right, named it
 /// "Relax", and that is a thing no amount of describing reproduces: it is five lights at five
-/// levels and two colour temperatures, and the value of it is precisely the detail.
+/// levels and two color temperatures, and the value of it is precisely the detail.
 ///
 /// Late-bound like [`ImportedRule`], and for the same reason — a scene names bindings, and no
 /// binding exists until the installer has adopted something. `steps` point at the offered devices
@@ -1562,7 +1562,7 @@ mod connection_tests {
     /// it builds one the way a driver does and round-trips it through the ABI's JSON, which is
     /// what a wasm driver's reply actually crosses.
     #[test]
-    fn a_driver_can_build_and_serialise_connections() {
+    fn a_driver_can_build_and_serialize_connections() {
         let call = HostCall::Connections {
             connections: vec![ConnectionDecl {
                 id: 1001,
@@ -1572,7 +1572,7 @@ mod connection_tests {
                 name: "HDMI-1".into(),
             }],
         };
-        let wire = serde_json::to_string(&call).expect("serialises");
+        let wire = serde_json::to_string(&call).expect("serializes");
         assert!(wire.contains("\"call\":\"connections\""), "{wire}");
         assert!(wire.contains("\"dir\":\"consumer\""), "{wire}");
         assert_eq!(serde_json::from_str::<HostCall>(&wire).unwrap(), call);

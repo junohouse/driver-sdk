@@ -410,7 +410,7 @@ impl Package {
 
         for i in 0..zip.len() {
             let mut entry = zip.by_index(i)?;
-            // `enclosed_name` is the whole defence against an archive containing `../../etc`.
+            // `enclosed_name` is the whole defense against an archive containing `../../etc`.
             // A sideloaded `.junodrv` is a file somebody downloaded, so this is a trust
             // boundary and the entry is skipped rather than sanitised — a package that needs
             // to escape its own directory is not one to guess the intentions of.

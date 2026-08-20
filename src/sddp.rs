@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 /// One device's announcement.
 ///
 /// Every header is kept, not just the ones matching knows about: the protocol is a vendor's
-/// and the set of fields is theirs to change, so throwing away what we did not recognise
+/// and the set of fields is theirs to change, so throwing away what we did not recognize
 /// would mean a driver author cannot match on something real hardware is plainly sending.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Found {
@@ -61,7 +61,7 @@ pub struct SddpMatch {
     /// The most specific thing a device volunteers, and the reason this exists: a great deal
     /// of AV hardware announces a Control4 driver filename whether or not a Control4 system is
     /// listening, and that filename names the exact model. Matching it is how our own driver
-    /// claims a device we would otherwise have no way to recognise.
+    /// claims a device we would otherwise have no way to recognize.
     ///
     /// It is an opaque label. Nothing reads, ships or derives from the file it names.
     pub driver: Option<String>,

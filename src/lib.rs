@@ -175,7 +175,7 @@ macro_rules! export_driver {
             };
 
             // A panicking driver must not unwind across the C boundary — that is undefined
-            // behaviour. Catch it and report it as a warning instead.
+            // behavior. Catch it and report it as a warning instead.
             //
             // On wasm this catches nothing, because that target has no unwinder: the panic
             // aborts, which is a trap. That is not a gap. The controller catches the trap,
@@ -228,7 +228,7 @@ macro_rules! export_driver {
     };
 }
 
-/// Serialise a response into a buffer the controller can read. Public because the macro
+/// Serialize a response into a buffer the controller can read. Public because the macro
 /// expands in the driver's crate; not meant to be called directly.
 #[doc(hidden)]
 pub fn __respond(response: Response, out_len: *mut usize) -> *mut u8 {

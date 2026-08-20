@@ -22,7 +22,7 @@ device and it is a learning remote with a macro list, which is the thing every o
 was built to replace.
 
 Not every button is universal, and pretending otherwise is how contracts like this go wrong. A
-softkey, a coloured teletext key and a "List" button mean nothing outside the box that shipped
+softkey, a colored teletext key and a "List" button mean nothing outside the box that shipped
 them, so they do not get forced into the enum — they arrive as `custom`, carrying the label the
 device prints on itself, and a rule binds them exactly as it would a keypad's key. One contract,
 two honest halves: what the house can route on its own, and what still needs somebody to say.
@@ -116,7 +116,7 @@ params.action = { type = "string", values = ["click", "double", "hold", "release
 [notifications.custom]
 title = "Other button"
 doc = """
-A button with no universal meaning: a softkey, a coloured key, a vendor's own function. It carries
+A button with no universal meaning: a softkey, a colored key, a vendor's own function. It carries
 the label the device prints, so a rule reads "Red" rather than "key 46", and an index so two keys
 printed the same are still distinguishable.
 

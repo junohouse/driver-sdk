@@ -53,7 +53,7 @@ params.mute = { type = "bool" }
 title = "Activate a scene"
 doc = """
 Put the room into a state somebody named — "Relax", "Reading". A scene is a set of levels and
-colours, one per light, kept by the project and applied together.
+colors, one per light, kept by the project and applied together.
 
 This was declared here once before with nothing behind it, and core answered it with an error. It
 is back because the thing it needed now exists: somewhere to keep "these five lights, each at its

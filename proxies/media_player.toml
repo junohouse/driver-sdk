@@ -284,7 +284,7 @@ requires = "has_apps"
 params.apps = { type = "string_list" }
 params.app_icons = { type = "string_list", optional = true, doc = """
 One artwork URL per entry in `apps`, same order, empty string where the device has none. A
-control surface draws the channel the way its owner recognises it — by its logo, not its name.
+control surface draws the channel the way its owner recognizes it — by its logo, not its name.
 
 These are addresses on the device, and they stay there: a client asks the controller for
 `/artwork?binding=..&i=..` and the controller fetches the picture. That is what makes this
