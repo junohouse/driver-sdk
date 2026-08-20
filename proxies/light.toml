@@ -85,11 +85,24 @@ params.action = { type = "string", values = ["press", "release", "click", "doubl
 title = "Reachability changed"
 params.online = { type = "bool" }
 
+# For hardware that reports power separately from brightness. Sending this once tells core to
+# stop inferring `on` from `level` for that device — so a driver reports both from then on, and
+# must not send a level that contradicts the power it last stated.
+[notifications.power_changed]
+title = "Turned on or off"
+params.on = { type = "bool" }
+
 [state]
 level  = { title = "Brightness", type = "u8" }
-# A light is on when its level is above zero. Maintained by core from `level` so a driver never
-# reports both and cannot report them disagreeing — and so a rule, a tile, and the suggestion
-# miner all mean the same thing by "the light is on".
+# A light is on when its level is above zero — *unless* the driver says otherwise. Core derives
+# this from `level` so that a driver which cannot separate the two never has to, and so a rule,
+# a tile and the suggestion miner all mean the same thing by "the light is on".
+#
+# It is a fallback, not a rule. Plenty of hardware keeps the two genuinely apart: a Hue bulb
+# holds the brightness it will return to while it is off, so "brightness 47, off" is a real
+# state and inferring power from level cannot express it. A driver that knows reports
+# `power_changed`, and from then on core stops deriving this key for that device and takes the
+# driver's word — see `Runtime::derive_state`.
 on     = { title = "On", type = "bool", truthy_of = "level" }
 hue    = { title = "Hue", type = "f32" }
 sat    = { title = "Saturation", type = "f32" }
