@@ -856,6 +856,20 @@ pub struct Candidate {
     /// Properties to set on the device. Everything here came off the wire.
     #[serde(default)]
     pub properties: BTreeMap<String, Value>,
+    /// What *this one* can do, resolved against the contract its manifest names.
+    ///
+    /// The same field [`Node::capabilities`] is, for the same reason and with the same rule
+    /// about who can answer honestly — a bridge's setup is the other way a driver learns what
+    /// one device is, and it knows exactly as much as an inventory does. A Hue bridge says
+    /// which of its lights has color and which is a white fitting on a lamp in the hall.
+    ///
+    /// The alternative is a manifest per shape: `bulb`, `bulb.color`, `bulb.dimmable`,
+    /// `bulb.tunable`, `bulb.on_off` — five drivers for one product that differ in nothing but
+    /// a capability line, listed in the catalog as five things to install, when Philips sells
+    /// one thing called a light. Empty means the manifest's own declaration stands, which is
+    /// right for a driver that ships one model.
+    #[serde(default)]
+    pub capabilities: BTreeMap<String, Value>,
     /// What the driver confirmed when it checked — proof it is really there.
     #[serde(default)]
     pub verified: String,
