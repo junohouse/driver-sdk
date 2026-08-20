@@ -691,6 +691,15 @@ pub struct Available {
     /// running — see `catalog::Release::commit`. Empty for a sideload or a hand-built package.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub commit: String,
+    /// Which `.junodrv` this came out of, by file name — the same string for every driver in
+    /// it, and empty for one with no file behind it.
+    ///
+    /// A package carries a product line: a Hue package is a bridge, a light, a motion sensor
+    /// and four remotes. They are installed together, they are removed together, and half a
+    /// file cannot be deleted — so anything offering to remove one of them has to be able to
+    /// say what else is in it first.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub package: String,
 }
 
 #[cfg(test)]
