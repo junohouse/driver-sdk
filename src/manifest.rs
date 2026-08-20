@@ -433,8 +433,10 @@ pub struct PropertyDecl {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Discovery {
+    /// A bare service type, or a table naming TXT keys the device must carry — see
+    /// [`crate::mdns::MdnsMatch`].
     #[serde(default)]
-    pub mdns: Vec<String>,
+    pub mdns: Vec<crate::mdns::MdnsMatch>,
     #[serde(default)]
     pub ssdp: Vec<String>,
     /// SDDP is matched across several fields at once, so an entry is either a bare type

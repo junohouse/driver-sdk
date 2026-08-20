@@ -76,6 +76,7 @@
 
 pub mod adapter;
 pub mod host;
+pub mod mdns;
 pub mod sddp;
 
 pub use host::{

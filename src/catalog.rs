@@ -89,8 +89,11 @@ impl Source {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DiscoveryHints {
+    /// A bare service type, or a service type plus what its TXT must say — see
+    /// [`crate::mdns::MdnsMatch`]. Bare strings are the shorthand, so rows published before
+    /// this existed read unchanged.
     #[serde(default)]
-    pub mdns: Vec<String>,
+    pub mdns: Vec<crate::mdns::MdnsMatch>,
     #[serde(default)]
     pub ssdp: Vec<String>,
     /// What an SDDP announcement has to look like. See [`SddpMatch`].
@@ -118,6 +121,10 @@ pub struct Release {
 #[derive(Debug, Clone, Default)]
 pub struct Discovered {
     pub mdns: Vec<String>,
+    /// The TXT of the advertisement in `mdns`, flattened. Carried because a service type is
+    /// not always a claim: `_airplay._tcp` is every AirPlay receiver on the network, and the
+    /// thing that separates them is what they say about themselves.
+    pub mdns_txt: std::collections::BTreeMap<String, String>,
     pub ssdp: Vec<String>,
     /// Whole announcements, not just their type — matching happens across several of their
     /// fields at once, so the fields have to survive this far.
@@ -166,7 +173,9 @@ impl Index {
                 let service_hit = |theirs: &[String], ours: &[String]| {
                     theirs.iter().any(|t| ours.iter().any(|o| o == t))
                 };
-                service_hit(&h.mdns, &found.mdns)
+                h.mdns
+                    .iter()
+                    .any(|rule| found.mdns.iter().any(|s| rule.matches(s, &found.mdns_txt)))
                     || service_hit(&h.ssdp, &found.ssdp)
                     || h.sddp
                         .iter()

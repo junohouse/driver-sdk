@@ -159,7 +159,7 @@ impl SddpMatch {
 /// Enough for driver filenames and model numbers, which is all this matches. A full regex
 /// would let a driver author write one that takes exponential time on an attacker-supplied
 /// announcement, and nothing here needs the expressiveness.
-fn glob_match(pattern: &str, value: &str) -> bool {
+pub(crate) fn glob_match(pattern: &str, value: &str) -> bool {
     let (pattern, value) = (pattern.to_ascii_lowercase(), value.to_ascii_lowercase());
     let mut parts = pattern.split('*');
     let Some(first) = parts.next() else {
