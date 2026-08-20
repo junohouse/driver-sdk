@@ -684,6 +684,13 @@ pub struct Available {
     /// How many devices currently use it.
     pub devices: usize,
     pub readme: Option<String>,
+    /// The driver repository's commit this build came from, when it is known.
+    ///
+    /// The only thing that answers "is this copy current". Nothing here is released, every
+    /// driver tracks `main`, and so `version` reads `1.0.0` on every build a house could be
+    /// running — see `catalog::Release::commit`. Empty for a sideload or a hand-built package.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub commit: String,
 }
 
 #[cfg(test)]
