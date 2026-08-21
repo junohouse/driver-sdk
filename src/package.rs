@@ -652,6 +652,33 @@ impl Package {
             zip.write_all(&std::fs::read(readme)?)?;
         }
 
+        // Declarative decoders the driver owns — data, not code, describing how its device's
+        // frames become a proxy payload. They ship *with the driver* because the driver is what
+        // knows: a radio adapter should not carry a table of every handset anybody ever wrote a
+        // driver for, and a decoder living beside the adapter would be maintained by whoever
+        // touched the adapter last rather than by whoever owns the device.
+        // Taken from `decoders/`, or from a protocol-named directory for a driver that keeps them
+        // beside the rest of its radio work. They land under one canonical archive path either
+        // way, because what reads them is the adapter for that protocol and it should not have to
+        // know how the driver author filed them.
+        for from in ["decoders", "zigbee"] {
+            let decoders = dir.join(from);
+            if !decoders.is_dir() {
+                continue;
+            }
+            let mut paths: Vec<_> = std::fs::read_dir(&decoders)?
+                .filter_map(std::result::Result::ok)
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|x| x == "json"))
+                .collect();
+            paths.sort();
+            for p in paths {
+                let name = p.file_name().unwrap().to_string_lossy().to_string();
+                zip.start_file(format!("decoders/{name}"), opts)?;
+                zip.write_all(&std::fs::read(&p)?)?;
+            }
+        }
+
         // The driver's own settings screen, if it has one. One self-contained page: the
         // configurator renders it in a frame from the text, so a second file it tried to
         // fetch would not be there to fetch.
