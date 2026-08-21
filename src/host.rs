@@ -78,6 +78,22 @@ pub enum HostCall {
         topic: String,
         payload: String,
     },
+    /// Put this on the device's own live control channel.
+    ///
+    /// For a device with a screen somebody is looking at *right now* — a navigator being driven
+    /// by a remote in the same room. Deliberately not a notification and deliberately not state:
+    /// a press is not a fact about the house that can be read back later, it is an instruction
+    /// that matters for the half second after it happens.
+    ///
+    /// That difference is the whole reason this exists rather than reusing the revision stream
+    /// every other screen watches. That stream coalesces — it says "something changed, read the
+    /// house again" — which is exactly right for state and wrong for input: two `up` presses in
+    /// one tick are one revision, and a page that re-read state would move the cursor once.
+    /// Frames here are delivered individually, in order, and are dropped rather than queued for
+    /// a screen nobody is watching.
+    Control {
+        payload: serde_json::Value,
+    },
     /// The signal connections this device actually has, as it currently is.
     ///
     /// `[[connection]]` in a manifest is written before anybody has plugged anything in, so for
