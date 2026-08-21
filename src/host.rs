@@ -92,6 +92,14 @@ pub enum HostCall {
     /// Frames here are delivered individually, in order, and are dropped rather than queued for
     /// a screen nobody is watching.
     Control {
+        /// Which of the device's channels this belongs on.
+        ///
+        /// One device can have more than one thing listening to it, and they are not
+        /// interchangeable: a navigator is both a page being navigated and a box wired into a
+        /// television, and the browser cannot act on a CEC message any more than the CEC daemon
+        /// can move a cursor. Naming the channel keeps each subscriber reading only what it can
+        /// act on, instead of every listener filtering a shared firehose by guessing.
+        channel: String,
         payload: serde_json::Value,
     },
     /// The signal connections this device actually has, as it currently is.
