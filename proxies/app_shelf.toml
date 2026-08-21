@@ -1,0 +1,32 @@
+name = "app_shelf"
+title = "App Shelf"
+category = "av"
+description = """
+A list of streaming apps somebody wants offered, with no hardware behind it at all.
+
+It exists because of what a television cannot say. A Roku lists its own channels and a room can
+show exactly those; a VIZIO launches anything SmartCast has but has no local endpoint that lists
+what is installed, so the only honest thing core can offer for one is the whole column of apps its
+platform *can* run — thirty-odd tiles, most of which nobody in the house has ever opened. A shelf
+is the other half of that: somebody says which apps this house actually watches, and every screen
+offers those instead.
+
+It is a device rather than a house setting so that it is placed, named, and edited with everything
+else — and so a house can have more than one. Nothing drives it and it drives nothing: `apps` is
+the whole contract, and the launching is still done by whichever player the catalog says can open
+the thing that was pressed.
+
+Names are matched through the app catalog, so `Prime Video`, `Amazon Prime` and `prime` are one
+entry and the spelling on the shelf does not have to be the spelling a box reports.
+"""
+
+# A shelf takes no commands. Listing what a house watches is not an action, and a shelf that
+# offered a `launch_app` would be claiming it could play something — it cannot, and the player
+# that can is chosen per room, per press, by core.
+
+[notifications.apps_changed]
+title = "Shelf changed"
+params.apps = { type = "string_list" }
+
+[state]
+apps = { title = "Apps", type = "string_list", doc = "The services this shelf offers, in the order they should be shown." }
