@@ -1,11 +1,15 @@
 name = "media_service"
 title = "Media service"
-category = "av"
+category = "system"
 description = """
 Somewhere music comes *from* that is not a URL and not a box in a rack: Spotify Connect, AirPlay,
 and whatever is added after them.
 
-# Why a service is a device
+# Why a service is a device, and why it is structural
+
+Structural rather than `av`, on the same grounds `app_shelf` is: every other contract in that
+category is a box with a power cord, and there is nothing here for a virtual driver to pretend to
+be. Nobody buys a Spotify Connect, and nobody points a remote at one.
 
 Because everything else somebody configures is one. Adding Spotify to a house is the same shape as
 adding a bridge — it gets a name, a settings page, a place in the item list and a project that
