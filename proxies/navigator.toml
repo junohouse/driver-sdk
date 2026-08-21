@@ -26,6 +26,31 @@ yet to receive one. A contract that claimed it would be a contract that lies.
 
 [capabilities]
 has_cec = { type = "bool", default = false, doc = "Can drive a television over HDMI-CEC — power, input, volume. True for a Pi wired into a set's HDMI, false for a tablet." }
+# A navigator with a control channel back to it — an OSD a remote drives — rather than a placed
+# panel that only reports where it is. This contract was command-less by design; this capability is
+# what opts a screen into being driven, so a plain placed panel still validates with no commands.
+has_control = { type = "bool", default = false, doc = "Accepts navigation commands over a channel back to the screen. True for an OSD a remote drives; false for a tablet that is only placed." }
+
+# Navigation — a remote's d-pad and its select/back/home/menu keys, routed to whichever screen is
+# the room's active video source. Gated by has_control so a placed panel offers none of it. The key
+# set mirrors `media_player`'s dpad so a remote's mapping is the same wherever it lands.
+[commands.dpad]
+title = "Navigate"
+requires = "has_control"
+params.key = { type = "string", values = ["up", "down", "left", "right", "select", "back", "home", "menu"] }
+
+# Transport, for media playing on the screen itself rather than on a source behind it.
+[commands.play]
+title = "Play"
+requires = "has_control"
+
+[commands.pause]
+title = "Pause"
+requires = "has_control"
+
+[commands.stop]
+title = "Stop"
+requires = "has_control"
 
 [notifications.online_changed]
 title = "Reachability changed"
