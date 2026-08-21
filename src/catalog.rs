@@ -102,6 +102,15 @@ pub struct DiscoveryHints {
     /// First three octets of the MAC, any separator style.
     #[serde(default)]
     pub mac_oui: Vec<String>,
+    /// What to broadcast, and what a reply of this driver's looks like. See
+    /// [`crate::udp::UdpMatch`].
+    ///
+    /// In the index, not just the manifest, because this is a *listening* discovery like the
+    /// three above it and not a sweep like `[[transport]] probe`: it runs against the whole
+    /// catalog so a controller with nothing installed still finds the hardware. Core needs the
+    /// port and the payload from here to know what to send.
+    #[serde(default)]
+    pub udp: Vec<crate::udp::UdpMatch>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,6 +151,9 @@ pub struct Discovered {
     /// fields at once, so the fields have to survive this far.
     pub sddp: Vec<crate::sddp::Found>,
     pub mac: Option<String>,
+    /// Whole replies, for the same reason `sddp` keeps whole announcements: a vendor's format
+    /// is the vendor's, and the port a reply came back on is half of what identifies it.
+    pub udp: Vec<crate::udp::Found>,
 }
 
 /// Normalize a MAC or OUI to bare uppercase hex so `FC:F1:52`, `fc-f1-52` and `FCF152` all
@@ -197,6 +209,9 @@ impl Index {
                             .iter()
                             .any(|o| m.starts_with(&norm_mac(o)) && !norm_mac(o).is_empty())
                     })
+                    || h.udp
+                        .iter()
+                        .any(|rule| found.udp.iter().any(|reply| rule.matches(reply)))
             })
             .collect()
     }

@@ -326,6 +326,27 @@ pub struct HttpRequest {
     pub headers: Vec<(String, String)>,
     #[serde(default)]
     pub body: Option<String>,
+    /// The body as bytes, for a protocol that is HTTP but not text.
+    ///
+    /// The same split — and the same reason for it — as [`SetupStep::Session::send_bytes`]
+    /// beside `send`. `body` is a `String` and core sends it as UTF-8, so a request carrying a
+    /// random seed or a ciphertext cannot be expressed by it at all; and the reply is decoded
+    /// lossily, which replaces most of a ciphertext with `U+FFFD` and leaves nothing to detect
+    /// it by afterwards. Set this and core writes the bytes untouched.
+    ///
+    /// Separate fields rather than a mode flag, so a driver cannot half-switch and get a
+    /// silently mangled body. Set both and this one wins.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub body_bytes: Vec<u8>,
+    /// Answer with `bytes` and `headers` rather than a parsed `body`.
+    ///
+    /// Two things a text reply cannot carry. The body, for the reason above — and the
+    /// *headers*, which a driver could not see at all before this: a session cookie is issued
+    /// in `Set-Cookie` and presented on every request after it, and a protocol built that way
+    /// was simply not expressible. `Http` still owns the socket, the timeout and the TLS; what
+    /// changes is only how much of the answer reaches the driver.
+    #[serde(default)]
+    pub binary: bool,
 }
 
 impl HttpRequest {
@@ -335,7 +356,24 @@ impl HttpRequest {
             url: url.into(),
             headers: Vec::new(),
             body: None,
+            body_bytes: Vec::new(),
+            binary: false,
         }
+    }
+
+    /// Send bytes, and take the answer as bytes and headers.
+    ///
+    /// Both halves together because a protocol that needs one needs the other — nothing has
+    /// ever wanted a binary request and a lossily-decoded reply. `content-type` is set to
+    /// `application/octet-stream`, which is what a server expects of an unlabelled body; a
+    /// vendor wanting something else adds its own [`Self::header`] afterwards, and the last
+    /// one set is the one sent.
+    pub fn bytes(mut self, body: Vec<u8>) -> Self {
+        self.headers
+            .push(("content-type".into(), "application/octet-stream".into()));
+        self.body_bytes = body;
+        self.binary = true;
+        self
     }
 
     pub fn json(mut self, body: impl Into<String>) -> Self {

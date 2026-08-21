@@ -78,6 +78,7 @@ pub mod adapter;
 pub mod host;
 pub mod mdns;
 pub mod sddp;
+pub mod udp;
 
 pub use host::{
     Accept, Args, BorrowedSceneSnapshot, BorrowedSceneStep, Candidate, Connect, ConnectionDecl,

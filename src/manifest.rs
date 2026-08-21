@@ -445,6 +445,11 @@ pub struct Discovery {
     pub sddp: Vec<crate::sddp::SddpMatch>,
     #[serde(default)]
     pub mac_oui: Vec<String>,
+    /// Broadcast a vendor's own discovery query and claim what answers — see
+    /// [`crate::udp::UdpMatch`]. For hardware that speaks none of the three standards above,
+    /// which is most of what a house actually contains.
+    #[serde(default)]
+    pub udp: Vec<crate::udp::UdpMatch>,
     // There was an `http` matcher here — a path to fetch and a string the body had to contain.
     // Nothing ever read it: no controller implemented it and no manifest declared one, so it
     // was a field the docs promised and the network never acted on. Asking a device a question
@@ -692,6 +697,22 @@ impl Manifest {
                 errs.push(format!(
                     "connection {}: proxy {} is not declared",
                     c.id, c.proxy
+                ));
+            }
+        }
+
+        // A discovery payload that will not decode is the failure this catches best: the hex
+        // is written by hand from a packet capture, an odd digit or a stray character is easy,
+        // and the symptom on a controller is a broadcast that goes out short or not at all and
+        // a driver that quietly never finds anything.
+        for rule in &self.discovery.udp {
+            if rule.port == 0 {
+                errs.push("discovery.udp: a rule needs a port to broadcast to".into());
+            }
+            if rule.payload().is_none() {
+                errs.push(format!(
+                    "discovery.udp port {}: `send_hex` is not hex — pairs of hex digits,                      optionally separated by spaces, `:` or `-`",
+                    rule.port
                 ));
             }
         }
