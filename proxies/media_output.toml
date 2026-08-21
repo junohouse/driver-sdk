@@ -61,6 +61,17 @@ has_volume = { type = "bool", default = false }
 volume_max = { type = "u32", default = 100 }
 has_mute = { type = "bool", default = false }
 
+# Which sources this output can be fed from, comma separated: `url,spotify,airplay`.
+#
+# A capability rather than a command's parameter list because it is a fact about the software on
+# that box, and it is what a house intersects its services against — a `media_service` naming a
+# protocol nothing can host is a service that should not be offered anywhere rather than one that
+# fails when somebody presses play.
+#
+# `url` is the plain case this contract was written for: `play`, above. The others are daemons the
+# box runs, driven from somebody's phone rather than from here — see `media_service`.
+services = { type = "string", default = "url", doc = "Comma-separated protocols this output can host" }
+
 [commands.play]
 title = "Play something"
 requires = "has_media"
@@ -110,6 +121,28 @@ doc = "Carry on from where `pause` stopped."
 [commands.stop]
 title = "Stop"
 doc = "Stop whatever is playing here. Does not turn anything off — an output is not a device."
+
+[commands.set_services]
+title = "Which services to host"
+doc = """
+Run these, stop anything else, and advertise them under this name.
+
+The whole list every time, never a delta. The same bargain `HostCall::Connections` makes and for
+the same reason: after a restart, a reconnect or a controller that was replaced, one message says
+what should be true and there is no resync path to get wrong. An empty list means host nothing,
+which is how a room is taken out of the Spotify picker.
+
+`name` is what somebody sees when they open the Spotify or AirPlay menu on their phone, so it
+should be the name of the *room* rather than of the box — nobody picking a speaker from a sofa
+knows which Pi is behind which television. Empty leaves it to the output, which will use whatever
+it calls itself.
+
+Anything in `services` that this output did not declare it can host is ignored rather than
+refused: a controller that has learned about a protocol before the box has is a controller in the
+middle of an upgrade, and it should not take the working half down.
+"""
+params.services = { type = "string", doc = "Comma separated, from this output's own `services`" }
+params.name = { type = "string", optional = true }
 
 [commands.set_volume]
 title = "Volume"
@@ -163,6 +196,10 @@ params.title = { type = "string", optional = true }
 params.artist = { type = "string", optional = true }
 params.artwork = { type = "string", optional = true }
 params.duration = { type = "u32", optional = true, doc = "Seconds. Absent for a live stream, which has none." }
+# Which of the things this output hosts is making the sound. Worth carrying beside the title
+# rather than being inferred from it: "Airbag" tells a screen nothing about whether it can offer a
+# pause button, and on a pushed service the answer is that somebody else's phone is the remote.
+params.source = { type = "string", optional = true, doc = "`url`, `spotify`, `airplay` — empty when nothing is playing" }
 
 [notifications.position_changed]
 title = "Position changed"
@@ -193,6 +230,7 @@ params.online = { type = "bool" }
 
 [state]
 endpoint = { title = "Delivery address", type = "string" }
+source   = { title = "Source", type = "string" }
 url      = { title = "Playing", type = "string" }
 title    = { title = "Title", type = "string" }
 artist   = { title = "Artist", type = "string" }

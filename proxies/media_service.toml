@@ -1,0 +1,69 @@
+name = "media_service"
+title = "Media service"
+category = "av"
+description = """
+Somewhere music comes *from* that is not a URL and not a box in a rack: Spotify Connect, AirPlay,
+and whatever is added after them.
+
+# Why a service is a device
+
+Because everything else somebody configures is one. Adding Spotify to a house is the same shape as
+adding a bridge — it gets a name, a settings page, a place in the item list and a project that
+remembers it — and none of that had to be invented. A house can have two of them without anything
+new existing. The alternative, a list on a settings screen, is one more page to write and one more
+thing configured somewhere other than the rest of the house.
+
+It has no hardware behind it and nothing to talk to, which is exactly why it is built in rather
+than certified: there is no protocol of somebody else's to get wrong, and a fresh house should not
+download a driver to tick the word Spotify.
+
+# The service is here; the audio is not
+
+Nothing on this contract carries or decodes anything. What a service *is*, technically, is a
+protocol an output has to implement — the daemon that speaks Spotify Connect runs on the box the
+speakers are wired to, because that is where the audio has to end up and there is no point moving
+it twice. So a service in the project is a statement that this house has Spotify, and `protocol`
+is the word that tells an output which daemon to run.
+
+Which outputs offer it is not stored here and is not a list somebody maintains: every output that
+can host the protocol offers it. A house that has added Spotify wants Spotify in the rooms that
+can play it, and a per-room tick would be a screen full of switches that are all on.
+
+# Pushed, not chosen
+
+`is_pushed` is true for both of the first two, and it is the thing about them that most surprises a
+controller. Nobody asks Juno to play something — somebody picks a room in the Spotify app or on
+their phone's AirPlay menu, and audio arrives. The house finds out what is playing by being told,
+after the fact, by the output.
+
+That is why this contract has no `play`. A service that the house *can* drive — one with an API
+behind it — would set `is_pushed = false` and grow commands then, and the difference is worth
+naming in the contract rather than being discovered by whoever writes the second kind.
+"""
+
+[capabilities]
+# The word an output is given to know which daemon to run: `spotify`, `airplay`. It is matched
+# against a `media_output`'s own `services` list, so it is a protocol name rather than a brand —
+# two services that speak the same protocol would be the same word here.
+protocol = { type = "string", default = "" }
+
+# Whether playback is started from somewhere else. True for anything where a phone is the remote
+# and the house is the speaker; see the note above for why it changes what this contract can have.
+is_pushed = { type = "bool", default = true }
+
+# Whether one session can drive several outputs at once.
+#
+# False for a per-box daemon, which is what both of the first two are: each room appears in the
+# Spotify picker as its own device, and grouping them is Spotify's own feature rather than Juno's.
+# A service that can fan out says so, and a house can then put one session in four rooms.
+has_multiroom = { type = "bool", default = false }
+
+[notifications.service_changed]
+title = "Service changed"
+doc = "What this service is and what it is called, after setup or an edit."
+params.protocol = { type = "string" }
+params.name = { type = "string", optional = true, doc = "What outputs advertise it as. Empty means each uses its room's name." }
+
+[state]
+protocol = { title = "Protocol", type = "string" }
+name     = { title = "Name", type = "string" }
