@@ -61,6 +61,52 @@ has_volume = { type = "bool", default = false }
 volume_max = { type = "u32", default = 100 }
 has_mute = { type = "bool", default = false }
 
+[commands.play]
+title = "Play something"
+requires = "has_media"
+doc = """
+Fetch this and play it. The whole of what an output needs to be told.
+
+**A URL, not audio.** The controller never carries a byte of it — a continuous stream through the
+one process the house depends on is the thing every other part of this design goes out of its way
+to avoid, and it would put the controller between a media server and a speaker for no benefit. The
+output fetches for itself, which also means a source too big or too fast for the controller's link
+is not thereby too big for the house.
+
+**`at` is what makes several rooms one room.** An empty `at` means "as soon as you can", which is
+right for one output. Given a moment, the output prepares and waits for it — so a controller
+handing three outputs the same URL and the same instant gets three rooms that start together
+instead of three rooms a second apart, which in an open-plan floor is worse than one room.
+
+RFC 3339, with milliseconds, in UTC. A wall clock rather than a countdown because a countdown is
+wrong by however long the request took, and that is exactly the error being removed. Everything in
+a house runs NTP; an output whose clock is wrong will start at the wrong time and is worth fixing
+rather than working around.
+
+The metadata is for whatever is drawing a screen in that room. Optional in the honest sense — a
+stream that has no title has none, and inventing "Unknown Artist" is a decision for whoever draws
+it rather than for the thing playing it.
+"""
+params.url = { type = "string" }
+params.at = { type = "string", optional = true, doc = "RFC 3339 instant to start at. Empty means now." }
+params.title = { type = "string", optional = true }
+params.artist = { type = "string", optional = true }
+params.artwork = { type = "string", optional = true, doc = "URL of cover art" }
+
+[commands.pause]
+title = "Pause"
+requires = "has_pause"
+doc = """
+Stop playing and keep the place. See `has_pause` for why not every output has this: a stream is
+not a file, and an internet radio station that is paused for four seconds and resumed has moved on
+four seconds.
+"""
+
+[commands.resume]
+title = "Resume"
+requires = "has_pause"
+doc = "Carry on from where `pause` stopped."
+
 [commands.stop]
 title = "Stop"
 doc = "Stop whatever is playing here. Does not turn anything off — an output is not a device."
@@ -98,6 +144,39 @@ single `playing`/`speaking`/`idle` would have to invent a name for that or lie a
 params.media = { type = "bool" }
 params.voice = { type = "bool" }
 
+[notifications.now_playing_changed]
+title = "What is playing changed"
+requires = "has_media"
+doc = """
+What this output is playing now, as it turned out — not as it was asked.
+
+Reported rather than assumed from the command, and the difference is the whole point: a URL that
+redirects, a station that names its own current track, a stream whose duration is only known once
+the headers arrive. A controller that echoed back what it sent would show the wrong title for
+every internet radio station in the world.
+
+An empty `url` means nothing is playing, which is how an output says a track ended or a stream
+dropped without anybody having asked it to stop.
+"""
+params.url = { type = "string" }
+params.title = { type = "string", optional = true }
+params.artist = { type = "string", optional = true }
+params.artwork = { type = "string", optional = true }
+params.duration = { type = "u32", optional = true, doc = "Seconds. Absent for a live stream, which has none." }
+
+[notifications.position_changed]
+title = "Position changed"
+requires = "has_media"
+doc = """
+How far into the track this output is, in seconds.
+
+Sent on the edges that matter — a start, a seek, a pause — rather than every second. A progress bar
+wants a number and a clock, not a stream of numbers: whoever is drawing one has the wall clock
+already and can move the bar itself between reports, and a house with six outputs in it should not
+be sending six messages a second to say that time is passing.
+"""
+params.seconds = { type = "u32" }
+
 [notifications.volume_changed]
 title = "Volume changed"
 requires = "has_volume"
@@ -114,6 +193,12 @@ params.online = { type = "bool" }
 
 [state]
 endpoint = { title = "Delivery address", type = "string" }
+url      = { title = "Playing", type = "string" }
+title    = { title = "Title", type = "string" }
+artist   = { title = "Artist", type = "string" }
+artwork  = { title = "Artwork", type = "string" }
+duration = { title = "Length", type = "u32" }
+position = { title = "Position", type = "u32", from = "seconds" }
 media    = { title = "Playing media", type = "bool" }
 voice    = { title = "Speaking", type = "bool" }
 volume   = { title = "Volume", type = "u32", from = "level" }
