@@ -555,6 +555,15 @@ impl Package {
                 .unwrap_or(false)
         });
         if is_adapter {
+            // npm's own declaration that a package carries its dependencies with it.
+            let bundles_deps = std::fs::read_to_string(dir.join("package.json"))
+                .ok()
+                .and_then(|src| serde_json::from_str::<serde_json::Value>(&src).ok())
+                .is_some_and(|pkg| {
+                    pkg.get("bundledDependencies")
+                        .or_else(|| pkg.get("bundleDependencies"))
+                        .is_some()
+                });
             let mut stack = vec![dir.to_path_buf()];
             while let Some(current) = stack.pop() {
                 for entry in std::fs::read_dir(&current)?.filter_map(std::result::Result::ok) {
@@ -576,10 +585,25 @@ impl Package {
                     // every intermediate object. The result installs and even runs, so
                     // nothing complains; it is just a driver package hundreds of times larger
                     // than the driver. None of these is ever payload.
-                    if matches!(
-                        entry.file_name().to_string_lossy().as_ref(),
-                        "target" | "node_modules" | ".git"
-                    ) {
+                    //
+                    // `node_modules` is the exception, and only when the driver asks: an
+                    // interpreted adapter cannot start without its dependencies, so for a package
+                    // meant to be *installed somewhere else* they are not bloat, they are the
+                    // payload. Opted into with `bundledDependencies` in package.json — npm's own
+                    // way of saying "these ship with me" — so packing one in place during
+                    // development still leaves them out by default.
+                    let base = entry.file_name().to_string_lossy().to_string();
+                    if base == "node_modules" && !bundles_deps {
+                        continue;
+                    }
+                    if matches!(base.as_str(), "target" | ".git") {
+                        continue;
+                    }
+                    // Never followed. A dependency tree is full of them — `.bin` shims, and the
+                    // self-referencing link npm leaves for a locally linked package — and
+                    // following that one walks the package root a second time, which fails the
+                    // archive with a duplicate entry rather than quietly shipping it twice.
+                    if entry.file_type().is_ok_and(|t| t.is_symlink()) {
                         continue;
                     }
                     if p.is_dir() {
