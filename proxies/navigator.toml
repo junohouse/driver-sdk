@@ -39,14 +39,34 @@ title = "Navigate"
 requires = "has_control"
 params.key = { type = "string", values = ["up", "down", "left", "right", "select", "back", "home", "menu"] }
 
-# No transport. A navigator is a control surface, not a player: it browses a house and launches
-# things onto boxes that *do* play, and pressing Play while it is on screen is about whatever it
-# started, not about the screen. Declaring `play` here made a remote's transport keys land on the
-# one device in the room that could not act on them — the contract claimed a capability, so
-# routing believed it, and the keys died on a screen that quietly dropped them.
-#
-# If a navigator ever grows a player of its own, this is where it says so, and it will need the
-# other end built at the same time.
+# Transport, for what the screen itself is showing. A navigator with a control channel is the
+# thing being driven — somebody is looking at it and pressing keys at it — so Play belongs to it
+# the same way the d-pad does. Gated by has_control alongside the rest, so a placed panel with no
+# channel back to it still declares none of this.
+[commands.play]
+title = "Play"
+requires = "has_control"
+
+[commands.pause]
+title = "Pause"
+requires = "has_control"
+
+[commands.play_pause]
+title = "Play or pause"
+doc = "One key for both, which is what a remote's transport row actually has."
+requires = "has_control"
+
+[commands.stop]
+title = "Stop"
+requires = "has_control"
+
+[commands.skip_forward]
+title = "Skip forward"
+requires = "has_control"
+
+[commands.skip_back]
+title = "Skip back"
+requires = "has_control"
 
 # The screen's CEC link to the television it is plugged into — a *second* way to reach that set,
 # separate from the set's own driver. Only the two operations CEC does reliably across brands:
