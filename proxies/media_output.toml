@@ -1,0 +1,121 @@
+name = "media_output"
+title = "Media output"
+category = "av"
+description = """
+Somewhere the house can hand a stream of audio to and have it come out in a room: the Pi behind a
+television, a Juno speaker with an amplifier in it, a player belonging to a media server.
+
+The mirror of `media_player`, and the two are not the same thing said twice. A media player
+*originates* content — it is a source, and a room's `listen` names one. This is where sound ends
+up. It chooses nothing, browses nothing and knows nothing about what it is playing; somebody
+upstream decided, and this is the last hop.
+
+**Why a separate proxy rather than capabilities on the device that has one.** Every output in a
+house belongs to something that is already a device for other reasons — the Pi is a `navigator`,
+the Juno speaker is a `voice_speaker`, a soundbar is a `tv`'s neighbour. Putting `has_mixing` on
+each of those means the same four capabilities written five times and drifting apart, and it means
+a room looking for somewhere to put a voice reply has to know all five contracts. One proxy is one
+question: which bindings in this room can be given audio, and what happens to what is already
+playing when they are.
+
+**It carries no audio.** Nothing here moves a byte. The same reasoning as `voice_speaker`'s
+`set_route`: whether audio reaches an output as PCM over a socket, as a URL it fetches, or as
+something not invented yet is the switching layer's business, and a contract that named a
+transport would have to change every time that did. What this contract does say is *where* to
+reach it — `endpoint`, below, which the driver fills in because the thing serving the audio is the
+only party that knows how it is reachable.
+
+# Voice, and what happens to the music
+
+The case this exists for is a reply arriving while something is already playing. Three things can
+happen, and which of them is *possible* is a fact about the hardware:
+
+- **Switching** — one audio slot. The media has to stop for the voice to be heard, and start again
+  afterwards. Anything with `has_mixing = false`.
+- **Mixing** — two slots. Voice can sound over the media, so the media can either duck under it or
+  be paused anyway. `has_mixing = true`, and which of the two happens is a decision somebody makes
+  per output, not something the device decides.
+
+Ducking is not always the kinder option, which is why it is a choice rather than a default: under
+a film at volume, a ducked track is still loud enough to bury a short answer, and a pause that
+resumes cleanly is less annoying than an answer nobody could make out.
+"""
+
+[capabilities]
+# What this output is willing to be given. Both default true because an output that plays neither
+# is not one — but they come apart in practice: an announcement-only ceiling speaker plays no
+# media, and a media player with no voice path plays no speech.
+has_media = { type = "bool", default = true, doc = "A media stream can be played here" }
+has_voice = { type = "bool", default = true, doc = "Voice replies and announcements can be played here" }
+
+# Whether voice and media can sound at the same time. False means switching: whatever is playing
+# has to stop first. See the note above — this is the hardware's answer, not the installer's.
+has_mixing = { type = "bool", default = false, doc = "Voice and media can sound at once" }
+
+# Whether the media stream can genuinely be paused and resumed where it left off, as opposed to
+# only being silenced. A stream is not a file: an internet radio station that is "paused" for four
+# seconds and resumed has moved on four seconds, and pretending otherwise is worse than ducking.
+has_pause = { type = "bool", default = false, doc = "Media playing here can be paused and resumed in place" }
+
+has_volume = { type = "bool", default = false }
+volume_max = { type = "u32", default = 100 }
+has_mute = { type = "bool", default = false }
+
+[commands.stop]
+title = "Stop"
+doc = "Stop whatever is playing here. Does not turn anything off — an output is not a device."
+
+[commands.set_volume]
+title = "Volume"
+requires = "has_volume"
+params.level = { type = "u32", min = 0, max_cap = "volume_max" }
+
+[commands.set_mute]
+title = "Mute"
+requires = "has_mute"
+params.mute = { type = "bool" }
+
+[notifications.endpoint_changed]
+title = "Delivery address changed"
+doc = """
+Where audio for this output is to be sent, as the thing serving it understands the question.
+
+Reported rather than derived, and for the reason `voice_speaker`'s `listening_changed` reports one:
+whoever holds the audio is the only party that knows where it is reachable, and anything that
+guessed would be wrong the first time a house ran two of them. Empty means it cannot currently be
+reached, which is a different statement from being offline.
+"""
+params.endpoint = { type = "string" }
+
+[notifications.playing_changed]
+title = "What is sounding changed"
+doc = """
+Whether media, voice, or both are coming out of this output right now.
+
+Two booleans rather than one state word because on a mixing output both are true at once, and a
+single `playing`/`speaking`/`idle` would have to invent a name for that or lie about it.
+"""
+params.media = { type = "bool" }
+params.voice = { type = "bool" }
+
+[notifications.volume_changed]
+title = "Volume changed"
+requires = "has_volume"
+params.level = { type = "u32" }
+
+[notifications.mute_changed]
+title = "Mute changed"
+requires = "has_mute"
+params.mute = { type = "bool" }
+
+[notifications.online_changed]
+title = "Reachability changed"
+params.online = { type = "bool" }
+
+[state]
+endpoint = { title = "Delivery address", type = "string" }
+media    = { title = "Playing media", type = "bool" }
+voice    = { title = "Speaking", type = "bool" }
+volume   = { title = "Volume", type = "u32", from = "level" }
+mute     = { title = "Muted", type = "bool" }
+online   = { title = "Reachable", type = "bool" }

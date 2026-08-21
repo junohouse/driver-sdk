@@ -36,6 +36,15 @@ has_mute = { type = "bool", default = false, doc = "The microphone can be turned
 has_hardware_mute = { type = "bool", default = false }
 
 has_route = { type = "bool", default = false, doc = "Where its voice goes can be set — see set_route" }
+
+# Whether there is an amplifier behind the microphone array at all. Plenty are microphone-only —
+# a ceiling array wired into a room that already has speakers has nowhere to put a reply — and
+# without this the house cannot tell "it did not answer" from "it cannot".
+#
+# It is what decides whether a room may fall back to the endpoint itself when everything else in
+# the room is off: on a microphone-only array there is nothing to fall back to.
+has_speaker = { type = "bool", default = true, doc = "There is a speaker in it; it can play what it is sent" }
+
 has_volume = { type = "bool", default = false, doc = "It speaks replies and the level can be set" }
 volume_max = { type = "u32", default = 100 }
 
@@ -154,6 +163,21 @@ them apart.
 """
 params.model = { type = "string" }
 
+[notifications.activity_changed]
+title = "Listening, thinking or speaking"
+doc = """
+Where this endpoint is in a conversation, from `woke` to going quiet again.
+
+`woke` says a conversation *started*; this says what it is doing now, and the difference is what a
+screen needs. A television in the room should show that the house is listening while somebody is
+still talking and take it down when the reply has finished, and neither edge is derivable from a
+wake event and a guess at how long a sentence takes.
+
+Sent by whatever is running the conversation rather than by the endpoint: the device knows it was
+woken and nothing more — whether a reply is still playing is a fact only the switching layer holds.
+"""
+params.state = { type = "string", values = ["idle", "listening", "thinking", "speaking"] }
+
 [notifications.direction_changed]
 title = "Voice direction changed"
 requires = "has_direction"
@@ -196,6 +220,11 @@ params.online = { type = "bool" }
 
 [state]
 wake_word = { title = "Wake word", type = "string", from = "model" }
+activity  = { title = "Activity", type = "string", from = "state" }
+# True whenever a conversation is under way at all, which is what a tile draws and a rule triggers
+# on. Kept as a derived key rather than left to each reader, so a screen and an automation cannot
+# disagree about whether "thinking" counts.
+in_conversation = { title = "In a conversation", type = "bool", one_of = { key = "activity", values = ["listening", "thinking", "speaking"] } }
 route     = { title = "Voice route", type = "string" }
 muted     = { title = "Microphone muted", type = "bool" }
 volume    = { title = "Volume", type = "u32", from = "level" }
