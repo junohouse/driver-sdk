@@ -318,7 +318,11 @@ impl Default for Node {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// `Default` is derived for the same reason [`Candidate`]'s is: this struct is written out as a
+/// literal in tests and in core, and every field added to it broke all of them at once. It is
+/// there for `..Default::default()`, not to be built bare — a request with no method and no URL
+/// is not one.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct HttpRequest {
     pub method: String,
     pub url: String,
