@@ -1,6 +1,6 @@
 name = "app_shelf"
 title = "App Shelf"
-category = "av"
+category = "system"
 description = """
 A list of streaming apps somebody wants offered, with no hardware behind it at all.
 
@@ -11,7 +11,9 @@ platform *can* run — thirty-odd tiles, most of which nobody in the house has e
 is the other half of that: somebody says which apps this house actually watches, and every screen
 offers those instead.
 
-It is a device rather than a house setting so that it is placed, named, and edited with everything
+Structural rather than `av`, for all that it is about televisions: every other contract in that
+category is a box with a power cord, and there is nothing here for a virtual driver to pretend to
+be. It is a device rather than a house setting so that it is placed, named, and edited with everything
 else — and so a house can have more than one. Nothing drives it and it drives nothing: `apps` is
 the whole contract, and the launching is still done by whichever player the catalog says can open
 the thing that was pressed.
