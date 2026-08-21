@@ -52,6 +52,25 @@ requires = "has_control"
 title = "Stop"
 requires = "has_control"
 
+# The screen's CEC link to the television it is plugged into — a *second* way to reach that set,
+# separate from the set's own driver. Only the two operations CEC does reliably across brands:
+# standby/one-touch-play, and Active Source. Volume is deliberately absent — it is the one CEC
+# feature sets disagree about most, and a volume key that works on one television and silently
+# does nothing on the next is worse than one that was never offered.
+[commands.tv_power]
+title = "Power the television"
+doc = "One-touch-play to wake the set, or standby to sleep it, over CEC."
+requires = "has_cec"
+params.on = { type = "bool" }
+
+[commands.tv_select]
+title = "Switch the television to this screen"
+doc = """
+Announce this screen as the Active Source, which is how CEC switches a set to the input a device
+is plugged into without anybody knowing which input that is.
+"""
+requires = "has_cec"
+
 [notifications.online_changed]
 title = "Reachability changed"
 params.online = { type = "bool" }
