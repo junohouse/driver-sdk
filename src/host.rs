@@ -38,7 +38,19 @@ pub struct ConnectionDecl {
     /// Driver-local and **stable across restarts** — a project remembers what an installer
     /// wired by this number, so renumbering moves somebody's cabling.
     pub id: LocalId,
-    pub proxy: LocalId,
+    /// Which of the device's proxies this port belongs to, when it belongs to one.
+    ///
+    /// Absent means the **device's**, and every binding on it may route through it. That is the
+    /// honest answer for a lead that carries more than one thing at once: a Juno screen's HDMI
+    /// out is the picture its navigator draws, the sound its media output streams, and the
+    /// control its CEC line sends, all down the same cable. Naming one proxy as the owner
+    /// claimed the other two were somewhere else.
+    ///
+    /// Routing never read this — the pathfinder joins *devices* through signal links — so it has
+    /// always been a statement about what a port is rather than a constraint on where a signal
+    /// may go. This makes the statement able to be true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<LocalId>,
     pub dir: Direction,
     /// `HDMI`, `Optical`, `Analog`. What the pathfinder costs and matches a signal against.
     pub class: String,
@@ -1702,7 +1714,7 @@ mod connection_tests {
         let call = HostCall::Connections {
             connections: vec![ConnectionDecl {
                 id: 1001,
-                proxy: 2,
+                proxy: Some(2),
                 dir: Direction::Consumer,
                 class: "HDMI".into(),
                 name: "HDMI-1".into(),

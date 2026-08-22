@@ -714,10 +714,12 @@ impl Manifest {
             if !seen.insert(c.id) {
                 errs.push(format!("duplicate connection id {}", c.id));
             }
-            if !self.proxy.iter().any(|d| d.id == c.proxy) {
+            if let Some(proxy) = c.proxy
+                && !self.proxy.iter().any(|d| d.id == proxy)
+            {
                 errs.push(format!(
-                    "connection {}: proxy {} is not declared",
-                    c.id, c.proxy
+                    "connection {}: proxy {proxy} is not declared",
+                    c.id
                 ));
             }
         }

@@ -30,6 +30,12 @@ has_cec = { type = "bool", default = false, doc = "Has an HDMI-CEC line to a tel
 # panel that only reports where it is. This contract was command-less by design; this capability is
 # what opts a screen into being driven, so a plain placed panel still validates with no commands.
 has_control = { type = "bool", default = false, doc = "Accepts navigation commands over a channel back to the screen. True for an OSD a remote drives; false for a tablet that is only placed." }
+# A screen is a box on the end of a cable like any other source, and it is both kinds at once: it
+# draws a picture and, through the media output beside it, plays sound down the same lead. Stated
+# rather than inferred from being a `navigator`, because a tablet in a dock is one too and is a
+# source of neither — nothing is plugged into it.
+is_video_source = { type = "bool", default = false, doc = "Its picture goes somewhere — a television, a matrix — rather than being looked at where it is." }
+is_audio_source = { type = "bool", default = false, doc = "Its sound goes with the picture, down the same lead." }
 
 # Navigation — a remote's d-pad and its select/back/home/menu keys, routed to whichever screen is
 # the room's active video source. Gated by has_control so a placed panel offers none of it. The key
