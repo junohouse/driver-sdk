@@ -25,6 +25,14 @@ semver = { version = "1", optional = true }
 toml = { version = "0.9", optional = true }
 zip = { version = "6", optional = true, default-features = false, features = ["deflate"] }
 
+# The primitives behind `crypto`. Pure Rust, no OS bindings — the same reason `random_get` is
+# the sandbox's own entropy source rather than a system RNG: nothing here can open a file or a
+# socket, so nothing here can be a dependency a wasm build refuses to link.
+sha1 = { version = "0.10", optional = true, default-features = false }
+sha2 = { version = "0.10", optional = true, default-features = false }
+aes = { version = "0.8", optional = true, default-features = false }
+cbc = { version = "0.1", optional = true, default-features = false, features = ["alloc", "block-padding"] }
+
 [[bin]]
 name = "junodrv"
 path = "src/bin/junodrv.rs"
@@ -50,5 +58,8 @@ default = []
 contracts = ["dep:anyhow", "dep:semver", "dep:toml"]
 # Building and reading `.junodrv` archives.
 pack = ["contracts", "dep:zip"]
+# SHA-1, SHA-256 and AES-128-CBC — the primitives behind nearly every LAN device's idea of
+# "encrypted", as opposed to a vendor's own protocol. See `crypto` in `src/lib.rs`.
+crypto = ["dep:sha1", "dep:sha2", "dep:aes", "dep:cbc"]
 
 [workspace]

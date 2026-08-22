@@ -75,6 +75,28 @@
 //! [`juno_alloc`]: crate::export_driver
 
 pub mod adapter;
+/// SHA-1, SHA-256 and AES-128-CBC, for the driver whose device speaks one of them.
+///
+/// A driver is a separately linked library — see [`serde_json`]'s doc above for the numbers —
+/// so this buys nothing in binary size over a driver declaring `sha2` and `aes` itself, and
+/// that is not the point. The point is that hashing and block-cipher code is exactly the kind
+/// of thing worth getting right once: an IV reused, a mode confused with another, a digest fed
+/// its inputs in the wrong order are all mistakes that compile, link, and produce a driver that
+/// silently talks to nothing. Centralizing it here is the same bet `SetupStep::MakeIdentity`
+/// already makes for certificate generation, cut down to the sandbox's own vocabulary: no
+/// pairing flow, no host round-trip, just a function call — because unlike a certificate these
+/// run on every command a device answers, and a driver cannot afford to wait on the host for
+/// one.
+///
+/// Behind a feature for the reason `contracts` is: a driver whose hardware needs none of this
+/// — the overwhelming majority — should not carry the object code for ciphers it never calls.
+///
+/// Not here: HMAC, AES-GCM, ECB, anything wider than 128-bit keys. Add the next primitive when
+/// a driver demonstrably needs it, the way SHA-1 and AES-128-CBC arrived with `tapo`'s KLAP —
+/// this is a home for what several drivers turn out to need, not a cryptography library written
+/// ahead of any of them asking.
+#[cfg(feature = "crypto")]
+pub mod crypto;
 pub mod host;
 pub mod mdns;
 pub mod sddp;
