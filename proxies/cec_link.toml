@@ -1,0 +1,41 @@
+name = "cec_link"
+title = "CEC link"
+category = "av"
+description = """
+A screen's HDMI-CEC line to the television it is plugged into.
+
+Its own contract, and its own device, because it is neither of the two things it sits between. It
+is not the screen — a `navigator` is a page somebody navigates, and turning a television off is
+not a thing you do to a page. And it is not the television — a `tv` reports which input it is on
+and how loud it is, and this reports nothing at all, because CEC gives a device no way to ask.
+
+That last part is the whole shape of it. Every command here is one-way: it is sent down the wire
+and the wire does not answer. A television that has its own two-way driver should be driven by
+that driver, and a house with one takes this out of the control path — which is a decision core
+makes per room rather than something anybody has to switch off by hand.
+
+Only the two operations CEC does reliably across brands: standby/one-touch-play, and Active
+Source. Volume is deliberately absent — it is the CEC feature sets disagree about most, and a
+volume key that works on one television and silently does nothing on the next is worse than one
+that was never offered.
+"""
+
+# No capabilities. Both commands are the whole of what a CEC link does, every adapter that exists
+# does both, and a capability nothing would ever set to false is a line of ceremony.
+
+[commands.tv_power]
+title = "Power the television"
+doc = "One-touch-play to wake the set, or standby to sleep it."
+params.on = { type = "bool" }
+
+[commands.tv_select]
+title = "Switch the television to this screen"
+doc = """
+Announce this screen as the Active Source, which is how CEC switches a set to the input a device
+is plugged into without anybody knowing which input that is.
+"""
+
+# No state and no notifications, deliberately rather than as an omission. CEC as this uses it is
+# a shout down a wire: the set may act on it, and nothing comes back to say whether it did. A
+# `power_changed` here would be this driver reporting what it hoped happened, which is exactly the
+# lie that makes people trust a control that is not working.

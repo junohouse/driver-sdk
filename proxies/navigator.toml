@@ -25,7 +25,7 @@ yet to receive one. A contract that claimed it would be a contract that lies.
 """
 
 [capabilities]
-has_cec = { type = "bool", default = false, doc = "Can drive a television over HDMI-CEC — power, input, volume. True for a Pi wired into a set's HDMI, false for a tablet." }
+has_cec = { type = "bool", default = false, doc = "Has an HDMI-CEC line to a television. It is not driven from here — a screen with this gets a `cec_link` device of its own — but whether the hardware has one at all is a fact about the screen, and this is where facts about the screen live." }
 # A navigator with a control channel back to it — an OSD a remote drives — rather than a placed
 # panel that only reports where it is. This contract was command-less by design; this capability is
 # what opts a screen into being driven, so a plain placed panel still validates with no commands.
@@ -71,24 +71,9 @@ requires = "has_control"
 title = "Skip back"
 requires = "has_control"
 
-# The screen's CEC link to the television it is plugged into — a *second* way to reach that set,
-# separate from the set's own driver. Only the two operations CEC does reliably across brands:
-# standby/one-touch-play, and Active Source. Volume is deliberately absent — it is the one CEC
-# feature sets disagree about most, and a volume key that works on one television and silently
-# does nothing on the next is worse than one that was never offered.
-[commands.tv_power]
-title = "Power the television"
-doc = "One-touch-play to wake the set, or standby to sleep it, over CEC."
-requires = "has_cec"
-params.on = { type = "bool" }
-
-[commands.tv_select]
-title = "Switch the television to this screen"
-doc = """
-Announce this screen as the Active Source, which is how CEC switches a set to the input a device
-is plugged into without anybody knowing which input that is.
-"""
-requires = "has_cec"
+# The screen's CEC link to the television used to be two commands here. It is its own device now,
+# hanging under the screen — see `cec_link`. It was never the screen: turning a television off is
+# not a thing you do to a page, and on this contract it read as one.
 
 [notifications.online_changed]
 title = "Reachability changed"
