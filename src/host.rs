@@ -78,6 +78,29 @@ pub enum HostCall {
         topic: String,
         payload: String,
     },
+    /// Fetch a picture and hand it back in the shape this device can actually draw.
+    ///
+    /// Decoding a PNG and scaling it is not something to do in a driver: it is a real image
+    /// library, and a sandboxed module that carried one would pay for it in every driver that
+    /// ships. Core has the library once; the driver says what it needs and stays the thing that
+    /// knows *why* — which pictures this device wants, what size its screen is, and how bytes get
+    /// to it. The conversion is the host's; the decision is the driver's.
+    ///
+    /// Answered asynchronously as an `image_response` event carrying `tag`, `bytes`, `width`,
+    /// `height` — the same arrangement as [`Self::Http`], and for the same reason: a fetch and a
+    /// resize take long enough that waiting for them would stop the house.
+    Image {
+        url: String,
+        /// Echoed straight back, so a driver with several in flight knows which answered. Its
+        /// own identifier, never interpreted here.
+        tag: String,
+        /// The square this device draws. Aspect ratio is not preserved — an icon grid is a grid.
+        width: u32,
+        height: u32,
+        /// What the device's screen wants. `rgb565` is little-endian, LVGL's native order; `rgba`
+        /// is raw 8-bit channels for anything that composites its own alpha.
+        format: String,
+    },
     /// Put this on the device's own live control channel.
     ///
     /// For a device with a screen somebody is looking at *right now* — a navigator being driven
