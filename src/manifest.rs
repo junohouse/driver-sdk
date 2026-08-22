@@ -450,6 +450,27 @@ pub struct Discovery {
     /// which is most of what a house actually contains.
     #[serde(default)]
     pub udp: Vec<crate::udp::UdpMatch>,
+    /// What answers these rules is not this driver — it is one of the devices behind it.
+    ///
+    /// For a bridge whose *children* are what appear on the network while the bridge itself
+    /// appears nowhere. A TP-Link account is the case that forced it: a Tapo dimmer answers
+    /// the discovery broadcast, and the account answers nothing at all, because an account is
+    /// not a thing with an address. So the rules that find a dimmer have to live on the
+    /// account — that is the driver a controller must install first, and the thing that has to
+    /// be set up before any dimmer can work — while what they actually find is a dimmer.
+    ///
+    /// Core reads it as a two-stage answer to the same sighting: with no such bridge in the
+    /// project, the find offers **this** driver, because nothing can be added until it exists.
+    /// Once one is set up, the same find offers the driver named here instead, adopted behind
+    /// it. Which is what somebody means by "discovery found the hub, and after that it finds
+    /// the lights."
+    ///
+    /// Only for a bridge that is genuinely invisible. A Hue bridge answers `_hue._tcp` *as
+    /// itself*, so its rules stay its own and this stays unset — declaring it there would turn
+    /// a bridge already in the project into a standing offer to add a bulb at the bridge's own
+    /// address.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adopt_as: Option<String>,
     // There was an `http` matcher here — a path to fetch and a string the body had to contain.
     // Nothing ever read it: no controller implemented it and no manifest declared one, so it
     // was a field the docs promised and the network never acted on. Asking a device a question

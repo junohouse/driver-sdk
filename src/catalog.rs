@@ -111,6 +111,11 @@ pub struct DiscoveryHints {
     /// port and the payload from here to know what to send.
     #[serde(default)]
     pub udp: Vec<crate::udp::UdpMatch>,
+    /// The driver a find under these rules should actually be adopted as, once this one is set
+    /// up — see [`crate::manifest::Discovery::adopt_as`]. In the index because the first half
+    /// of that two-stage answer has to work before anything is installed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adopt_as: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -131,6 +131,7 @@ fn run() -> anyhow::Result<()> {
                         sddp: m.discovery.sddp.clone(),
                         mac_oui: m.discovery.mac_oui.clone(),
                         udp: m.discovery.udp.clone(),
+                        adopt_as: m.discovery.adopt_as.clone(),
                     },
                     versions: vec![Release {
                         // Every driver in a package ships at the package's version. Letting
