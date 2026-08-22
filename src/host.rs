@@ -178,6 +178,36 @@ pub enum HostCall {
     Subscribe {
         topic: String,
     },
+    /// What this device can see that the house does not have yet.
+    ///
+    /// The second stage of discovery, and the half core cannot do for itself. The first is
+    /// declarative and built in: a controller broadcasts and listens for what every driver in
+    /// the registry declared, which is how hardware is found before its driver is downloaded —
+    /// see `[discovery]` in a manifest. That stage can only ever find things that answer on a
+    /// network, and it must work with nothing installed, so it knows nothing about any
+    /// particular vendor.
+    ///
+    /// This is the other one. Once a bridge is set up, the *driver* is what can see behind it:
+    /// a Hue bridge knows about a bulb that was paired in the Hue app, and nothing on the
+    /// network will ever announce that bulb, because the bulb has no network. So the driver
+    /// says so, and what it reports joins the same discovery list as everything heard on the
+    /// wire — one list, because "a new light appeared" is one thought regardless of which of
+    /// the two found it.
+    ///
+    /// A **snapshot**, never a delta, and replacing whatever this device reported before — the
+    /// same bargain [`Self::Present`] and [`Self::Connections`] make, and for the same reason:
+    /// after a reconnect a driver says what it can see now and core reconciles, with no resync
+    /// path to get wrong. Reporting an empty list is therefore meaningful and says everything
+    /// this device could see has been dealt with.
+    ///
+    /// These are **offers, not adoptions**. A bridge listing hardware is not consent to put it
+    /// in somebody's house — the same rule that governs [`Self::Present`] — so core turns them
+    /// into rows somebody presses Add on. Anything already in the project is filtered out by
+    /// core, matched on the identifying properties the child's own manifest declares, so a
+    /// driver may report everything it can see and does not have to track what was adopted.
+    Offers {
+        devices: Vec<Candidate>,
+    },
     /// Emit a proxy notification. Validated against the declared capabilities before it
     /// reaches anything else.
     Notify {
@@ -933,7 +963,10 @@ pub struct PickRow {
 /// A device a driver found and is offering to set up.
 ///
 /// `Default` is derived so a field added here later does not break every driver that builds one.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// `PartialEq` because [`HostCall::Offers`] carries these and `HostCall` compares — and because
+/// core leans on it to notice that a snapshot said the same thing as the last one, which is the
+/// difference between a quiet discovery list and one that redraws every poll.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Candidate {
     /// What to call it in the list — distinct enough to tell two of the same apart.
     pub label: String,
