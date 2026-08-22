@@ -158,7 +158,11 @@ pub struct Discovered {
 
 /// Normalize a MAC or OUI to bare uppercase hex so `FC:F1:52`, `fc-f1-52` and `FCF152` all
 /// compare equal. Vendors are not consistent and neither are driver authors.
-fn norm_mac(s: &str) -> String {
+///
+/// Public because a controller matches the same rules against its *installed* manifests as
+/// this matches against the catalog, and the two have to normalize identically — a second copy
+/// of this is a second answer to "is `fc-f1-52` this device", arrived at somewhere else.
+pub fn norm_mac(s: &str) -> String {
     s.chars()
         .filter(|c| c.is_ascii_hexdigit())
         .map(|c| c.to_ascii_uppercase())
