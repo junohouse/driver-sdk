@@ -7,6 +7,7 @@ targets them when a room's video sink is this device.
 """
 
 [capabilities]
+is_video_sink       = { type = "bool", default = true,  doc = "The room's picture can end at this binding. Displays opt in; sources such as media players and navigators do not." }
 has_discrete_power  = { type = "bool", default = false, doc = "Separate on and off commands, not just a toggle" }
 has_discrete_input  = { type = "bool", default = false, doc = "Can select an input directly rather than cycling" }
 has_discrete_volume = { type = "bool", default = false, doc = "Can be set to an absolute volume" }

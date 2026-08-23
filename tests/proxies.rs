@@ -29,6 +29,26 @@ fn every_bundled_contract_parses_and_validates() {
 }
 
 #[test]
+fn only_displays_are_video_sinks_by_default() {
+    let reg = ProxyRegistry::bundled().unwrap();
+    let tv = reg.get("tv").unwrap().resolve(&caps(&[])).unwrap();
+    let navigator = reg
+        .get("navigator")
+        .unwrap()
+        .resolve(&caps(&[]))
+        .unwrap();
+    let player = reg
+        .get("media_player")
+        .unwrap()
+        .resolve(&caps(&[]))
+        .unwrap();
+
+    assert_eq!(tv.cap("is_video_sink").as_bool(), Some(true));
+    assert_eq!(navigator.cap("is_video_sink").as_bool(), None);
+    assert_eq!(player.cap("is_video_sink").as_bool(), None);
+}
+
+#[test]
 fn json_takes_structures_and_nothing_else() {
     assert!(ValueType::Json.accepts(&json!([{ "id": "1" }])));
     assert!(ValueType::Json.accepts(&json!({ "items": [] })));
