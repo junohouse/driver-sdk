@@ -352,16 +352,32 @@ impl Serialize for ActionOn {
 
 /// One argument of an [`ActionDecl`].
 ///
-/// Deliberately the same small vocabulary as `[[property]]`, so a driver author learns one
-/// thing and a form renderer has one thing to render.
+/// Nearly the same small vocabulary as `[[property]]`, so a driver author learns one thing and
+/// a form renderer has one thing to render — and the exception is worth knowing. A property is
+/// named by its `name`, which *is* the label, and explained by `tooltip`. An argument has a
+/// separate `label`, because `name` is the key the driver receives and is not always something
+/// to show somebody.
+///
+/// The two used to differ in a way that was simply a gap: an argument had nowhere to put the
+/// sentence explaining it. A Zigbee adapter's `via` ended up with
+/// `label = "Through — address of one router, or blank for the whole mesh"`, which is a tooltip
+/// wearing a label's clothes and sixty characters wide in a row of controls.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArgDecl {
     pub name: String,
     #[serde(rename = "type")]
     pub ty: String,
+    /// What to call it on screen. `name` is the key the driver is handed; this is for people.
     #[serde(default)]
     pub label: String,
+    /// The sentence explaining it, shown on hover — the same job `PropertyDecl::tooltip` does.
+    ///
+    /// Keep it out of `label`. A label sits inline in a row of controls next to the button that
+    /// runs the action, so a long one pushes everything else off the end; this has a tooltip to
+    /// live in and no width to respect.
+    #[serde(default)]
+    pub tooltip: String,
     #[serde(default)]
     pub required: bool,
     pub default: Option<Value>,
