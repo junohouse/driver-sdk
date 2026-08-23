@@ -54,6 +54,25 @@ fn search_still_works_without_a_token() {
         .expect("a search with no token is legal");
 }
 
+/// A launcher is a source-selection action, not an assumption that every d-pad's Home key opens
+/// apps. Some sets have a dedicated launcher command, and a disc player with a Home key has no
+/// app launcher at all.
+#[test]
+fn app_launcher_is_exposed_only_when_the_driver_declares_it() {
+    let reg = ProxyRegistry::bundled().unwrap();
+    let mp = reg.get("media_player").unwrap();
+
+    let plain = mp.resolve(&BTreeMap::new()).unwrap();
+    assert!(!plain.supports("open_app_launcher"));
+
+    let smart_tv = mp
+        .resolve(&caps(&[("has_app_launcher", json!(true))]))
+        .unwrap();
+    assert!(smart_tv.supports("open_app_launcher"));
+    mp.validate_call(&smart_tv, "open_app_launcher", &BTreeMap::new())
+        .expect("a declared launcher takes no vendor-specific arguments");
+}
+
 #[test]
 fn play_item_queue_action_is_checked_against_the_contract() {
     let reg = ProxyRegistry::bundled().unwrap();

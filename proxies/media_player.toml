@@ -38,6 +38,7 @@ ramp anything it has a code for, and a box reached over HTTP one request at a ti
 nothing at all however many keys it has.
 """ }
 has_apps           = { type = "bool", default = false, doc = "Installed applications can be listed and launched" }
+has_app_launcher   = { type = "bool", default = false, doc = "The player's top-level application launcher can be opened" }
 has_deep_link      = { type = "bool", default = false, doc = """
 `launch_app` can open a *particular title*, not just the app.
 
@@ -132,6 +133,16 @@ requires = "has_search"
 # every driver that already implements this command.
 params.token = { type = "string", optional = true, doc = "Echoed back on the matching `search_results`" }
 params.query = { type = "string" }
+
+[commands.open_app_launcher]
+doc = """
+Open the player's top-level application launcher.
+
+This is separate from `dpad { key = \"home\" }`: some televisions expose their app launcher as
+a dedicated input or command, while others reach it with a Home key. The driver owns that
+difference. Core uses this command when the media player is selected as a room source.
+"""
+requires = "has_app_launcher"
 
 [commands.dpad]
 requires = "has_dpad"
