@@ -41,7 +41,6 @@ pub struct Found {
     pub extra: BTreeMap<String, String>,
 }
 
-
 /// What a driver claims from an SDDP announcement.
 ///
 /// Every field is optional and every one that is set must match — so a rule is as loose or as

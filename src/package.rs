@@ -373,8 +373,8 @@ impl Package {
     /// Replaced rather than merged: an upgrade that leaves a deleted file behind is a process
     /// running a mix of two versions, which is the kind of bug nobody reproduces.
     pub fn unpack(path: &Path, into: &Path) -> Result<()> {
-        let file = std::fs::File::open(path)
-            .with_context(|| format!("opening {}", path.display()))?;
+        let file =
+            std::fs::File::open(path).with_context(|| format!("opening {}", path.display()))?;
         let mut zip = zip::ZipArchive::new(file)?;
 
         // Extract beside the destination and move it into place, rather than clearing the
@@ -573,7 +573,9 @@ impl Package {
                     if p == path {
                         continue;
                     }
-                    let Ok(rel) = p.strip_prefix(dir) else { continue };
+                    let Ok(rel) = p.strip_prefix(dir) else {
+                        continue;
+                    };
                     let name = rel.to_string_lossy().replace('\\', "/");
                     // Already written above, and writing it twice makes an archive with two
                     // entries of the same name.
@@ -862,7 +864,10 @@ mod unpack_tests {
             .map(|e| e.file_name().to_string_lossy().to_string())
             .filter(|n| n.contains(".unpack-") || n.contains(".old-"))
             .collect();
-        assert!(leftovers.is_empty(), "staging dirs left behind: {leftovers:?}");
+        assert!(
+            leftovers.is_empty(),
+            "staging dirs left behind: {leftovers:?}"
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -884,7 +889,9 @@ mod unpack_tests {
 
         // The common case: the crate is named for what it exports, the directory for the
         // product, and dashes become underscores the way cargo does it.
-        write("[package]\nname = \"juno-driver-hue\"\nversion = \"1.2.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n");
+        write(
+            "[package]\nname = \"juno-driver-hue\"\nversion = \"1.2.0\"\nedition = \"2021\"\n\n[lib]\ncrate-type = [\"cdylib\"]\n",
+        );
         assert_eq!(lib_name(&dir).as_deref(), Some("juno_driver_hue"));
         assert!(belongs_to(Path::new("libjuno_driver_hue.dylib"), &dir));
         assert!(belongs_to(Path::new("juno_driver_hue.dll"), &dir));
@@ -892,7 +899,9 @@ mod unpack_tests {
         assert!(!belongs_to(Path::new("libjuno_driver_roku.dylib"), &dir));
 
         // An explicit `[lib] name` wins over the package name.
-        write("[package]\nname = \"signify-hue\"\nversion = \"1.0.0\"\n\n[lib]\nname = \"juno_driver_hue\"\n");
+        write(
+            "[package]\nname = \"signify-hue\"\nversion = \"1.0.0\"\n\n[lib]\nname = \"juno_driver_hue\"\n",
+        );
         assert_eq!(lib_name(&dir).as_deref(), Some("juno_driver_hue"));
 
         // No Cargo.toml is a declarative driver, and that is not an error.

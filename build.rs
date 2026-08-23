@@ -40,7 +40,6 @@ fn main() {
     }
     out.push_str("];\n");
 
-    let dest = std::path::Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR"))
-        .join("proxies.rs");
+    let dest = std::path::Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join("proxies.rs");
     std::fs::write(&dest, out).expect("writing the generated contract list");
 }

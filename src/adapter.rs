@@ -12,8 +12,8 @@
 //! other writes: the controller deserializes [`Up`] and serializes [`Down`], and an adapter
 //! does the mirror image.
 
-use crate::host::{Args, HostCall};
 use crate::LocalId;
+use crate::host::{Args, HostCall};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -24,7 +24,6 @@ use std::collections::BTreeMap;
 /// boundary. A controller accepts `PROTOCOL` and `PROTOCOL - 1`, and that one rule is what
 /// makes an adapter upgrade and a controller upgrade two maintenance windows instead of one.
 pub const PROTOCOL: u32 = 1;
-
 
 /// Adapter to core. One JSON object per line on stdout.
 ///
@@ -86,10 +85,7 @@ pub enum Up {
     /// and handed straight back on the next `Open`. Storing something one cannot interpret is
     /// the point: the alternative is core learning a schema that changes whenever the adapter
     /// does.
-    Config {
-        coord: u32,
-        config: Value,
-    },
+    Config { coord: u32, config: Value },
     /// A coordinator came up, or went away. Reported rather than inferred: a radio that has
     /// stopped answering is a different thing from one that was never configured, and an
     /// integrator needs to be told which.

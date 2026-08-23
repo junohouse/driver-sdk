@@ -176,7 +176,9 @@ wake event and a guess at how long a sentence takes.
 Sent by whatever is running the conversation rather than by the endpoint: the device knows it was
 woken and nothing more — whether a reply is still playing is a fact only the switching layer holds.
 """
-params.state = { type = "string", values = ["idle", "listening", "thinking", "speaking"] }
+params.state = { type = "string", values = ["idle", "listening", "thinking", "speaking", "complete"] }
+params.transcript = { type = "string", optional = true, doc = "What the person said in the current turn, for a room display" }
+params.reply = { type = "string", optional = true, doc = "What Juno is saying in the current turn, for a room display" }
 
 [notifications.direction_changed]
 title = "Voice direction changed"
@@ -221,10 +223,12 @@ params.online = { type = "bool" }
 [state]
 wake_word = { title = "Wake word", type = "string", from = "model" }
 activity  = { title = "Activity", type = "string", from = "state" }
+transcript = { title = "Heard", type = "string" }
+reply      = { title = "Reply", type = "string" }
 # True whenever a conversation is under way at all, which is what a tile draws and a rule triggers
 # on. Kept as a derived key rather than left to each reader, so a screen and an automation cannot
 # disagree about whether "thinking" counts.
-in_conversation = { title = "In a conversation", type = "bool", one_of = { key = "activity", values = ["listening", "thinking", "speaking"] } }
+in_conversation = { title = "In a conversation", type = "bool", one_of = { key = "activity", values = ["listening", "thinking", "speaking", "complete"] } }
 route     = { title = "Voice route", type = "string" }
 muted     = { title = "Microphone muted", type = "bool" }
 volume    = { title = "Volume", type = "u32", from = "level" }

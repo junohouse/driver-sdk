@@ -37,6 +37,13 @@ has_control = { type = "bool", default = false, doc = "Accepts navigation comman
 is_video_source = { type = "bool", default = false, doc = "Its picture goes somewhere — a television, a matrix — rather than being looked at where it is." }
 is_audio_source = { type = "bool", default = false, doc = "Its sound goes with the picture, down the same lead." }
 
+# Voice belongs to the navigator, not to the media output that happens to share its HDMI lead. A
+# distributed-audio room may deliberately leave the Pi out of media playback while still using
+# the television for Juno's replies, so those two endpoints must remain independently selectable.
+has_voice = { type = "bool", default = false, doc = "Voice replies and announcements can be delivered to this navigator" }
+has_mixing = { type = "bool", default = false, doc = "The navigator has independent voice and media playback paths" }
+has_pause = { type = "bool", default = false, doc = "Media on the navigator's companion output can be paused and resumed around voice" }
+
 # Navigation — a remote's d-pad and its select/back/home/menu keys, routed to whichever screen is
 # the room's active video source. Gated by has_control so a placed panel offers none of it. The key
 # set mirrors `media_player`'s dpad exactly — all nine keys — so a remote's mapping is the same
@@ -90,11 +97,21 @@ title = "What is on screen changed"
 doc = "Which room the screen is showing, or nothing when it is on the house view."
 params.room = { type = "string" }
 
+[notifications.voice_endpoint_changed]
+title = "Voice delivery address changed"
+doc = """
+Where a voice switch can deliver replies for this navigator. Empty means the voice player is not
+currently reachable. This is deliberately on the navigator rather than its companion media output:
+media can be disabled in a distributed-audio room while voice remains available on the screen.
+"""
+params.endpoint = { type = "string" }
+
 [state]
 online = { title = "Reachable", type = "bool" }
 # Where the screen is, as opposed to what it is showing. Set by placing the device in a room like
 # any other; read back by the screen itself so it opens where it lives.
 showing = { title = "Showing", type = "string" }
+endpoint = { title = "Voice delivery address", type = "string" }
 address = { title = "Address", type = "string" }
 serial = { title = "MAC", type = "string" }
 model = { title = "Model", type = "string" }

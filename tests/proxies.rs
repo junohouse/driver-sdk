@@ -32,11 +32,7 @@ fn every_bundled_contract_parses_and_validates() {
 fn only_displays_are_video_sinks_by_default() {
     let reg = ProxyRegistry::bundled().unwrap();
     let tv = reg.get("tv").unwrap().resolve(&caps(&[])).unwrap();
-    let navigator = reg
-        .get("navigator")
-        .unwrap()
-        .resolve(&caps(&[]))
-        .unwrap();
+    let navigator = reg.get("navigator").unwrap().resolve(&caps(&[])).unwrap();
     let player = reg
         .get("media_player")
         .unwrap()
@@ -46,6 +42,46 @@ fn only_displays_are_video_sinks_by_default() {
     assert_eq!(tv.cap("is_video_sink").as_bool(), Some(true));
     assert_eq!(navigator.cap("is_video_sink").as_bool(), None);
     assert_eq!(player.cap("is_video_sink").as_bool(), None);
+}
+
+#[test]
+fn navigator_voice_is_independent_of_its_media_output() {
+    let reg = ProxyRegistry::bundled().unwrap();
+    let navigator = reg.get("navigator").unwrap();
+    let screen = navigator
+        .resolve(&caps(&[
+            ("has_voice", json!(true)),
+            ("has_mixing", json!(true)),
+            ("has_pause", json!(true)),
+        ]))
+        .unwrap();
+    assert_eq!(screen.cap("has_voice").as_bool(), Some(true));
+    assert_eq!(screen.cap("has_mixing").as_bool(), Some(true));
+    navigator
+        .validate_notification(
+            &screen,
+            "voice_endpoint_changed",
+            &args(&[("endpoint", json!("http://navigator.local:9020"))]),
+        )
+        .expect("a navigator reports its own voice delivery endpoint");
+}
+
+#[test]
+fn voice_activity_can_carry_the_words_a_room_display_draws() {
+    let reg = ProxyRegistry::bundled().unwrap();
+    let speaker = reg.get("voice_speaker").unwrap();
+    let resolved = speaker.resolve(&caps(&[])).unwrap();
+    speaker
+        .validate_notification(
+            &resolved,
+            "activity_changed",
+            &args(&[
+                ("state", json!("speaking")),
+                ("transcript", json!("What time is it?")),
+                ("reply", json!("It is seven thirty.")),
+            ]),
+        )
+        .expect("conversation text is optional display state, not a second protocol");
 }
 
 #[test]
@@ -70,8 +106,12 @@ fn search_still_works_without_a_token() {
         .resolve(&caps(&[("has_search", json!(true))]))
         .expect("declared capabilities resolve");
 
-    mp.validate_call(&resolved, "search", &args(&[("query", json!("taylor swift"))]))
-        .expect("a search with no token is legal");
+    mp.validate_call(
+        &resolved,
+        "search",
+        &args(&[("query", json!("taylor swift"))]),
+    )
+    .expect("a search with no token is legal");
 }
 
 /// A launcher is a source-selection action, not an assumption that every d-pad's Home key opens
@@ -184,7 +224,10 @@ fn volume_is_a_capability_of_the_box_not_of_the_room() {
         .unwrap();
 
     let roku = mp.resolve(&BTreeMap::new()).unwrap();
-    assert!(!roku.supports("set_volume"), "a streamer has no volume of its own");
+    assert!(
+        !roku.supports("set_volume"),
+        "a streamer has no volume of its own"
+    );
     assert!(
         mp.validate_call(&roku, "set_volume", &args(&[("level", json!(35))]))
             .is_err()

@@ -134,7 +134,10 @@ mod tests {
             port,
             reply: body.as_bytes().to_vec(),
         };
-        assert!(rule.matches(&reply(20002, r#"{"mgt_encrypt_schm":{"encrypt_type":"KLAP"}}"#)));
+        assert!(rule.matches(&reply(
+            20002,
+            r#"{"mgt_encrypt_schm":{"encrypt_type":"KLAP"}}"#
+        )));
         // The right port is not the claim. One broadcast here is answered by every TP-Link
         // device in the house, and a Kasa plug does not take a Tapo dimmer's driver.
         assert!(!rule.matches(&reply(20002, r#"{"system":{"get_sysinfo":{}}}"#)));
@@ -142,9 +145,21 @@ mod tests {
 
         // Odd digits are a typo in a manifest, and a payload half on the wire finds nothing
         // while looking like it should.
-        assert_eq!(UdpMatch { port: 1, send_hex: Some("abc".into()), ..Default::default() }.payload(), None);
+        assert_eq!(
+            UdpMatch {
+                port: 1,
+                send_hex: Some("abc".into()),
+                ..Default::default()
+            }
+            .payload(),
+            None
+        );
         // Text queries stay text.
-        let text = UdpMatch { port: 9999, send: Some("hello".into()), ..Default::default() };
+        let text = UdpMatch {
+            port: 9999,
+            send: Some("hello".into()),
+            ..Default::default()
+        };
         assert_eq!(text.payload(), Some(b"hello".to_vec()));
     }
 }

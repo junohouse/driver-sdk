@@ -80,7 +80,10 @@ impl ProxyRegistry {
                 }
             };
             if proxy.name != *name {
-                problems.push(format!("{name}: name `{}` does not match filename", proxy.name));
+                problems.push(format!(
+                    "{name}: name `{}` does not match filename",
+                    proxy.name
+                ));
             }
             for e in proxy.validate() {
                 problems.push(format!("{name}: {e}"));

@@ -83,7 +83,11 @@ pub enum Source {
 impl Source {
     /// From a repository's visibility, which is the only thing that decides this.
     pub fn from_private(private: bool) -> Self {
-        if private { Source::Closed } else { Source::Open }
+        if private {
+            Source::Closed
+        } else {
+            Source::Open
+        }
     }
 }
 

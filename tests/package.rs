@@ -54,7 +54,10 @@ capabilities = {{ has_transport = true }}
 fn each_driver_gets_the_payload_its_own_runtime_asks_for() {
     let proxies = ProxyRegistry::bundled().unwrap();
     let bytes = archive_of(&[
-        ("manifests/thing.toml", manifest("thing", "native", true).as_bytes()),
+        (
+            "manifests/thing.toml",
+            manifest("thing", "native", true).as_bytes(),
+        ),
         (
             "manifests/thing.ir.toml",
             manifest("thing.ir", "declarative", false).as_bytes(),
@@ -63,7 +66,10 @@ fn each_driver_gets_the_payload_its_own_runtime_asks_for() {
         ("driver-linux-x86_64.so", b"NATIVE"),
         ("driver-linux-aarch64.so", b"NATIVE"),
         ("driver-windows-x86_64.dll", b"NATIVE"),
-        ("commands.toml", b"command.menu = { control = 1, invoke = \"send\" }"),
+        (
+            "commands.toml",
+            b"command.menu = { control = 1, invoke = \"send\" }",
+        ),
     ]);
 
     let pkg = Package::read(std::io::Cursor::new(bytes), &proxies).unwrap();
@@ -93,7 +99,10 @@ fn each_driver_gets_the_payload_its_own_runtime_asks_for() {
 fn a_sibling_missing_its_payload_is_refused() {
     let proxies = ProxyRegistry::bundled().unwrap();
     let bytes = archive_of(&[
-        ("manifests/thing.toml", manifest("thing", "native", true).as_bytes()),
+        (
+            "manifests/thing.toml",
+            manifest("thing", "native", true).as_bytes(),
+        ),
         (
             "manifests/thing.ir.toml",
             manifest("thing.ir", "declarative", false).as_bytes(),
