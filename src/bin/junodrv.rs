@@ -140,7 +140,7 @@ fn run() -> anyhow::Result<()> {
                     // wrong, and would get it wrong differently in each reader.
                     kind: m.kind().map(str::to_string),
                     variant_of: m.driver.variant_of.clone(),
-                    reach: m.reach(),
+                    connections: m.control.iter().map(|c| format!("{:?}", c.kind).to_lowercase()).collect(),
                     repo: flag("--repo").unwrap_or_default(),
                     source,
                     proxies: m.proxy.iter().map(|p| p.ty.clone()).collect(),
@@ -152,6 +152,7 @@ fn run() -> anyhow::Result<()> {
                         sddp: m.discovery.sddp.clone(),
                         mac_oui: m.discovery.mac_oui.clone(),
                         udp: m.discovery.udp.clone(),
+                        zigbee: m.discovery.zigbee.clone(),
                         adopt_as: m.discovery.adopt_as.clone(),
                     },
                     versions: vec![Release {

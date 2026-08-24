@@ -66,14 +66,14 @@ pub struct Entry {
     /// and strangers in a catalog until this says otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant_of: Option<String>,
-    /// How this driver reaches its hardware — from [`crate::manifest::Manifest::reach`].
+    /// The connections this driver declares, by kind — `["mqtt"]`, `["ir_out"]`,
+    /// `["tcp", "mqtt"]`.
     ///
-    /// In the index because it is what tells one variant from another, and a catalog has to
-    /// draw that distinction for products nobody has installed: two variants reached
-    /// differently are a question somebody has to answer, and two reached the same way are one
-    /// row whose own setup flow settles which it is.
+    /// In the index because a catalog has to show a product it has never installed, and
+    /// "reached two ways" is a thing about the product rather than about the copy on disk. A
+    /// driver with more than one is a choice somebody makes while adding it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub reach: Vec<String>,
+    pub connections: Vec<String>,
     /// `junohouse/sony-bravia-ip`. The provenance claim.
     #[serde(default)]
     pub repo: String,
@@ -147,6 +147,12 @@ pub struct DiscoveryHints {
     /// port and the payload from here to know what to send.
     #[serde(default)]
     pub udp: Vec<crate::udp::UdpMatch>,
+    /// What an unknown node on a mesh has to look like — see
+    /// [`crate::manifest::ZigbeeMatch`]. Here for the same reason as the four above it: a
+    /// coordinator reporting a node nobody has a driver for should be answerable from the
+    /// catalog, not only from what is already installed.
+    #[serde(default)]
+    pub zigbee: Vec<crate::manifest::ZigbeeMatch>,
     /// The driver a find under these rules should actually be adopted as, once this one is set
     /// up — see [`crate::manifest::Discovery::adopt_as`]. In the index because the first half
     /// of that two-stage answer has to work before anything is installed.

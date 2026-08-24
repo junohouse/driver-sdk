@@ -38,6 +38,17 @@ pub enum Runtime {
     ///
     /// A package can never carry one. See [`crate::driver::package`].
     Builtin,
+    /// No code at all: the driver *is* a decode table, and core reads it as data.
+    ///
+    /// A mesh device is not something a module drives. Its frames arrive already decoded — the
+    /// coordinator hands core a cluster and a payload, and `zigbee/<driver id>.json` says what
+    /// that means — so a module here would have nothing to be called with. The T2i is the case:
+    /// every line of its plugin existed to frame bytes off a USB port that a radio remote never
+    /// uses, and once the port went there was no code left to ship.
+    ///
+    /// The payload is the table, and the package is refused without one, exactly as a `wasm`
+    /// package is refused without its module.
+    Zigbee,
     /// A protocol stack in its own process, spoken to over a pipe. See
     /// [`crate::driver::adapter`], and [`AdapterDecl`] for the activation rule.
     ///
@@ -51,23 +62,52 @@ pub enum Runtime {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ControlKind {
+    // ---- patched. The installer wires this to a port on another device, and the project
+    // remembers which — see `ControlLink`. Each one names the proxy a provider must implement.
     Relay,
     Contact,
     IrOut,
     Serial,
+    // ---- dialled. Core opens this itself, at the address the device carries. Nothing is
+    // wired and nothing is persisted; what varies is the port and how the bytes are framed.
+    Network,
+    Tcp,
+    Mqtt,
+    /// HomeKit Accessory Protocol, which is a socket with its own handshake on top.
+    Hap,
+    /// Joined to a mesh and adopted under a coordinator. Neither patched nor dialled: the
+    /// radio is somebody else's device and the frames arrive decoded — see the `zigbee/`
+    /// table a package carries and [`Discovery::zigbee`], which is what finds one.
+    Zigbee,
 }
 
 impl ControlKind {
-    /// The proxy a provider must implement to satisfy this kind of control connection.
-    /// This mapping is the hinge of the whole abstraction: a driver asks for `relay` and gets
-    /// bound to *any* binding of the `relay` proxy, whatever hardware is underneath.
-    pub fn provider_proxy(self) -> &'static str {
+    /// The proxy a provider must implement to satisfy this connection, for the kinds that are
+    /// patched to one. `None` for the kinds core reaches itself.
+    ///
+    /// This mapping is the hinge of the whole abstraction: a driver asks for `ir_out` and gets
+    /// bound to *any* binding of the `ir_out` proxy, whatever hardware is underneath.
+    pub fn provider_proxy(self) -> Option<&'static str> {
         match self {
-            ControlKind::Relay => "relay",
-            ControlKind::Contact => "contact",
-            ControlKind::IrOut => "ir_out",
-            ControlKind::Serial => "serial_port",
+            ControlKind::Relay => Some("relay"),
+            ControlKind::Contact => Some("contact"),
+            ControlKind::IrOut => Some("ir_out"),
+            ControlKind::Serial => Some("serial_port"),
+            _ => None,
         }
+    }
+
+    /// Whether an installer has to wire this to something before the driver can work.
+    pub fn is_patched(self) -> bool {
+        self.provider_proxy().is_some()
+    }
+
+    /// Whether core opens this itself, at the device's own address.
+    pub fn is_dialled(self) -> bool {
+        matches!(
+            self,
+            ControlKind::Network | ControlKind::Tcp | ControlKind::Mqtt | ControlKind::Hap
+        )
     }
 }
 
@@ -335,8 +375,9 @@ pub struct AdapterDecl {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct DockerDecl {
-    /// Fully qualified, with a tag. `latest` is refused at lint: a house that upgrades its media
-    /// server because somebody pushed a tag is a house that broke on its own.
+    /// Fully qualified, with an exact version. An unpinned tag is a lint finding rather than a
+    /// refusal — it is legal and it is a mistake: a house that changes what it is running
+    /// because somebody else pushed a tag has broken on its own, on a restart nobody asked for.
     pub image: String,
     /// `host:container`, as `docker run -p` takes them. Published rather than host-networked
     /// because a host network is a Linux-only trick and the ports an adapter needs are known.
@@ -483,33 +524,26 @@ pub struct ControlDecl {
     pub id: LocalId,
     pub kind: ControlKind,
     pub name: String,
+    /// The driver cannot work without it. Read only for a patched kind — a dialled one is
+    /// required by definition, since there is nothing for an installer to leave undone.
     #[serde(default = "default_true")]
     pub required: bool,
+    /// Which of this driver's own proxies this connection serves, when only one of them does.
     pub proxy: Option<LocalId>,
-}
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct TransportDecl {
-    /// What this connection is, for whoever reads the manifest. Core dispatches on none of it:
-    /// the socket is `port` plus `tls`, and a driver that wants MQTT says so by sending
-    /// `HostCall::Publish`. Kept because a bare `[[transport]]` block says nothing at all.
-    pub kind: String,
-    /// The port core dials, for the drivers whose socket core owns — the ones that send
-    /// `HostCall::Tx` or `HostCall::Publish`.
+    // ---- dialled kinds only. Absent on a patched one, and refused there by `validate`.
+    /// The port core dials, for the connections whose socket core owns — the ones a driver
+    /// speaks over `HostCall::Tx` or `HostCall::Publish`.
     ///
     /// Leave it unset for a driver that builds its own URLs through `HostCall::Http`: nothing
     /// reads it there, and a second copy of the port beside the one in the code is a copy that
     /// will disagree. Also unset when the port is announced rather than fixed — a Companion
     /// link and a HAP accessory pick one at boot and put it in their SRV record, which arrives
     /// as the device's own `Port` property and wins over this anyway.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
-    /// Accepted and ignored. It named the mechanism that finds this hardware, which is what the
-    /// `[discovery]` table does and has always been read from instead — nothing has ever
-    /// dispatched on this. Kept only because `deny_unknown_fields` means removing it would stop
-    /// every already-published package that writes one from installing; do not write new ones.
-    #[serde(default)]
-    pub discovery: String,
+    /// Hold the socket open. For a link whose point is the session — a pairing that costs two
+    /// round trips, an event subscription that only delivers while the socket is up.
     #[serde(default)]
     pub keepalive: bool,
     /// This connection carries framed bytes, not lines of text.
@@ -520,32 +554,21 @@ pub struct TransportDecl {
     /// every driver that has needed this so far.
     ///
     /// It has to be declared rather than inferred. A binary frame read down the text path is cut
-    /// at the first `0x0A` inside its length prefix and has every non-UTF-8 byte replaced, and
-    /// neither is detectable afterwards — the driver receives something that decodes to
-    /// plausible nonsense. Guessing wrong in that direction is worse than saying so here.
+    /// at the first `0x0A` inside its length prefix and has every non-UTF-8 byte replaced, which
+    /// for a ciphertext is most of them.
     #[serde(default)]
     pub binary: bool,
-    /// Wrap the connection in mutual TLS — a client certificate property must be set on the
-    /// device (or inherited from its bridge) or the connection is refused.
     #[serde(default)]
     pub tls: bool,
-    /// Fixed MQTT CONNECT credentials, for a broker that wants a password but not a per-install
-    /// secret — the whole product line shares one, published in the vendor's own docs. Unlike
-    /// `[[property]]`, this is not something an installer sets or a pairing flow discovers: it
-    /// is the same string for every unit, so it belongs on the manifest next to `port`, not on
-    /// the device.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
-    /// How to recognize this hardware on a network it does not announce itself on.
-    ///
-    /// Set it and a controller with this driver *installed* sweeps its own network for `port`
-    /// when a survey runs, so the address does not have to be found and typed in. Leave it
-    /// unset and nothing is swept — see [`crate::manifest::Probe`] for why this is opt-in and
-    /// why it only ever applies to installed drivers.
+    /// Ask the device a question on connect and check what comes back — see [`Probe`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probe: Option<Probe>,
 }
+
 
 /// What to send to something that might be this driver's hardware, and what proves it is.
 ///
@@ -594,6 +617,32 @@ pub struct PropertyDecl {
     pub required: bool,
 }
 
+/// The signature of a device on a Zigbee mesh: what its descriptor says about itself.
+///
+/// Deliberately the same three fields a `zigbee/<id>.json` fingerprint already carries, so a
+/// package says it once and the index can carry it without a second vocabulary.
+#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ZigbeeMatch {
+    /// The application profile id. `49297` is the Control4/RTI one; `260` is Home Automation.
+    pub profile: u16,
+    pub endpoint: u8,
+    /// Clusters the endpoint must offer. A node offering more still matches — a descriptor is
+    /// a list of what a device *can* do, and requiring an exact set would refuse every device
+    /// that gained a cluster in a firmware update.
+    #[serde(default)]
+    pub in_clusters: Vec<u16>,
+}
+
+impl ZigbeeMatch {
+    /// Whether a node's descriptor satisfies this rule.
+    pub fn matches(&self, profile: u16, endpoint: u8, clusters: &[u16]) -> bool {
+        self.profile == profile
+            && self.endpoint == endpoint
+            && self.in_clusters.iter().all(|c| clusters.contains(c))
+    }
+}
+
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Discovery {
@@ -614,6 +663,16 @@ pub struct Discovery {
     /// which is most of what a house actually contains.
     #[serde(default)]
     pub udp: Vec<crate::udp::UdpMatch>,
+    /// What an unknown node on the mesh has to look like for this driver to be the answer —
+    /// see [`ZigbeeMatch`].
+    ///
+    /// Beside the other four rather than anywhere else, because it is the same question asked
+    /// of a different network: a coordinator reports a node nobody recognises, and the
+    /// controller matches it against the whole catalog and offers the package. Without it a
+    /// mesh device can only be adopted once somebody has already guessed which driver to
+    /// install, which is the one thing discovery exists to remove.
+    #[serde(default)]
+    pub zigbee: Vec<ZigbeeMatch>,
     /// What answers these rules is not this driver — it is one of the devices behind it.
     ///
     /// For a bridge whose *children* are what appear on the network while the bridge itself
@@ -651,8 +710,6 @@ pub struct Manifest {
     pub control: Vec<ControlDecl>,
     #[serde(default)]
     pub connection: Vec<ConnectionDecl>,
-    #[serde(default)]
-    pub transport: Vec<TransportDecl>,
     #[serde(default)]
     pub property: Vec<PropertyDecl>,
     #[serde(default)]
@@ -766,34 +823,7 @@ impl Manifest {
         self.driver.product.as_deref().unwrap_or(&self.driver.name)
     }
 
-    /// How this driver reaches its hardware, in the words its own manifest uses.
-    ///
-    /// Controls first, then transports, because a driver with a `[[control]]` is reached
-    /// *through* something an installer wired — an emitter, a relay contact — and that is the
-    /// answer somebody needs. A driver with neither is reached by nothing anybody chose: it is
-    /// a child of a bridge, or it is core's own.
-    ///
-    /// What this exists for is telling two variants apart. `apple.tv` is `network` and
-    /// `apple.tv.ir` is `ir_out`: same product, and nothing but somebody standing in the room
-    /// knows which one is true, so they have to be asked. `roku.player` and `roku.tv` are both
-    /// `network` — the difference between them is what the box *is*, not how it is reached, and
-    /// the setup flow reads `is-tv` and settles it without asking anybody anything.
-    pub fn reach(&self) -> Vec<String> {
-        if !self.control.is_empty() {
-            // The proxy name rather than the enum's own spelling: `ir_out`, which is the word
-            // the manifest was written with and the one the contracts use everywhere else.
-            let mut out: Vec<String> = self
-                .control
-                .iter()
-                .map(|c| c.kind.provider_proxy().to_string())
-                .collect();
-            out.dedup();
-            return out;
-        }
-        let mut out: Vec<String> = self.transport.iter().map(|t| t.kind.clone()).collect();
-        out.dedup();
-        out
-    }
+
 
     pub fn control(&self, id: LocalId) -> Option<&ControlDecl> {
         self.control.iter().find(|c| c.id == id)
@@ -920,17 +950,58 @@ impl Manifest {
             if !seen.insert(c.id) {
                 errs.push(format!("duplicate control id {}", c.id));
             }
-            if registry.get(c.kind.provider_proxy()).is_none() {
+            if c.name.trim().is_empty() {
                 errs.push(format!(
-                    "control {}: no `{}` proxy in this core",
-                    c.id,
-                    c.kind.provider_proxy()
+                    "control {}: needs a name — a driver with two connections asks somebody \
+                     which, and `1` and `2` is not a question anyone can answer",
+                    c.id
                 ));
+            }
+            if let Some(want) = c.kind.provider_proxy()
+                && registry.get(want).is_none()
+            {
+                errs.push(format!("control {}: no `{want}` proxy in this core", c.id));
             }
             if let Some(p) = c.proxy
                 && !self.proxy.iter().any(|d| d.id == p)
             {
                 errs.push(format!("control {}: proxy {p} is not declared", c.id));
+            }
+            // A field that means nothing for this kind is a mistake worth catching while
+            // somebody is looking at the manifest. Silently ignoring it is how a driver ships
+            // with a port nothing dials and an author who believes it is dialled.
+            if !c.kind.is_dialled() {
+                for (field, set) in [
+                    ("port", c.port.is_some()),
+                    ("tls", c.tls),
+                    ("keepalive", c.keepalive),
+                    ("binary", c.binary),
+                    ("username", c.username.is_some()),
+                    ("password", c.password.is_some()),
+                    ("probe", c.probe.is_some()),
+                ] {
+                    if set {
+                        errs.push(format!(
+                            "control {}: `{field}` means nothing on a `{:?}` connection — \
+                             nothing opens a socket for it",
+                            c.id,
+                            c.kind
+                        ));
+                    }
+                }
+            }
+        }
+        // Two connections of the same kind are two of the same thing, and nothing downstream
+        // can tell them apart when it matters — which port to dial, which one a device is set
+        // up on. Two *different* kinds is the whole point of the table.
+        let mut kinds = BTreeSet::new();
+        for c in &self.control {
+            if c.kind.is_dialled() && !kinds.insert(c.kind) {
+                errs.push(format!(
+                    "two `{:?}` connections — a driver reached two ways has to be reached two \
+                     different ways",
+                    c.kind
+                ));
             }
         }
 
@@ -1050,18 +1121,20 @@ mod id_tests {
             id = 1
             type = "bridge"
 
-            [[transport]]
+            [[control]]
+            id = 1
             kind = "network"
+            name = "API"
             port = 7421
 
-            [transport.probe]
+            [control.probe]
             send = "{\"op\":\"hello\",\"token\":\"\"}\n"
             expect = "\"op\":\"denied\""
             "#,
         )
         .expect("manifest with a probe should parse");
 
-        let probe = m.transport[0]
+        let probe = m.control[0]
             .probe
             .as_ref()
             .expect("probe should be there");
@@ -1077,18 +1150,18 @@ mod id_tests {
         assert_eq!(probe.expect.as_deref(), Some(r#""op":"denied""#));
     }
 
-    /// A transport without one is the normal case, and must stay the normal case: a missing
-    /// `[transport.probe]` is what stops a controller sweeping the network for every driver.
+    /// A connection without one is the normal case, and must stay the normal case: a missing
+    /// `[control.probe]` is what stops a controller sweeping the network for every driver.
     #[test]
-    fn a_transport_without_a_probe_sweeps_nothing() {
+    fn a_connection_without_a_probe_sweeps_nothing() {
         let m = manifest_with("roku.tv").unwrap();
-        assert!(m.transport.iter().all(|t| t.probe.is_none()));
+        assert!(m.control.iter().all(|c| c.probe.is_none()));
     }
 
     /// Fixed MQTT credentials belong on the manifest — the whole product line shares one
     /// broker password — and have to survive a round trip through TOML same as `port` does.
     #[test]
-    fn mqtt_credentials_on_a_transport_parse() {
+    fn mqtt_credentials_on_a_connection_parse() {
         let m: Manifest = toml::from_str(
             r#"
             [driver]
@@ -1099,8 +1172,10 @@ mod id_tests {
             [[proxy]]
             id = 1
             type = "media_player"
-            [[transport]]
+            [[control]]
+            id = 1
             kind = "mqtt"
+            name = "Broker"
             port = 36669
             tls = true
             username = "hisenseservice"
@@ -1108,17 +1183,17 @@ mod id_tests {
             "#,
         )
         .expect("manifest with mqtt credentials should parse");
-        let t = &m.transport[0];
-        assert_eq!(t.username.as_deref(), Some("hisenseservice"));
-        assert_eq!(t.password.as_deref(), Some("multimqttservice"));
+        let c = &m.control[0];
+        assert_eq!(c.username.as_deref(), Some("hisenseservice"));
+        assert_eq!(c.password.as_deref(), Some("multimqttservice"));
 
-        // Absent for every transport that has never needed one — a Roku, a Denon.
+        // Absent for every connection that has never needed one — a Roku, a Denon.
         let plain = manifest_with("roku.tv").unwrap();
         assert!(
             plain
-                .transport
+                .control
                 .iter()
-                .all(|t| t.username.is_none() && t.password.is_none())
+                .all(|c| c.username.is_none() && c.password.is_none())
         );
     }
 

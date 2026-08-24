@@ -200,33 +200,62 @@ fn kind_and_product_fall_back_to_the_driver() {
     );
 }
 
-/// What tells two variants apart, and therefore whether anybody has to be asked.
+/// One table, and a field that means nothing for a kind is a build error rather than a
+/// silence.
 ///
-/// The distinction is the whole reason the Items panel asks about an Apple TV and not about a
-/// Roku. Reached differently — a Companion socket or an IR emitter — and only somebody
-/// standing in the room knows which; reached the same way, and the difference is what the box
-/// *is*, which its own setup flow can read off the device.
+/// The silence is the bug worth preventing: a driver ships with a `port` on an IR emitter and
+/// its author believes something dials it. Nothing ever did, and nothing ever said so.
 #[test]
-fn reach_is_the_control_then_the_transport() {
+fn a_connection_is_checked_against_its_own_kind() {
     use driver_sdk::manifest::Manifest;
+    let proxies = ProxyRegistry::bundled().unwrap();
 
-    let network = Manifest::parse(&format!(
-        "{}\n[[transport]]\nkind = \"network\"\n",
+    let dialled = Manifest::parse(&format!(
+        "{}\n[[control]]\nid = 1\nkind = \"mqtt\"\nname = \"Broker\"\nport = 8883\ntls = true\n",
         manifest("a.net", "wasm", true)
     ))
     .unwrap();
-    assert_eq!(network.reach(), vec!["network".to_string()]);
+    assert!(dialled.validate(&proxies).is_empty());
 
-    // A control outranks a transport rather than joining it: what an installer wired is the
-    // answer somebody needs, and a driver that declares both is reached through the wire.
-    let emitter = Manifest::parse(&format!(
-        "{}\n[[transport]]\nkind = \"network\"\n\n[[control]]\nid = 1\nkind = \"ir_out\"\nname = \"IR\"\n",
+    let patched = Manifest::parse(&format!(
+        "{}\n[[control]]\nid = 1\nkind = \"ir_out\"\nname = \"IR\"\nport = 4998\n",
         manifest("a.ir", "wasm", true)
     ))
     .unwrap();
-    assert_eq!(emitter.reach(), vec!["ir_out".to_string()]);
+    let errs = patched.validate(&proxies);
+    assert!(
+        errs.iter().any(|e| e.contains("`port` means nothing")),
+        "a port on an emitter has to be refused: {errs:?}"
+    );
 
-    // Neither: a child of a bridge, reached through whatever its parent holds.
-    let child = Manifest::parse(&manifest("a.child", "wasm", false)).unwrap();
-    assert!(child.reach().is_empty());
+    // Two of the same dialled kind: nothing downstream could say which one a device is on.
+    let twice = Manifest::parse(&format!(
+        "{}\n[[control]]\nid = 1\nkind = \"tcp\"\nname = \"A\"\n\n         [[control]]\nid = 2\nkind = \"tcp\"\nname = \"B\"\n",
+        manifest("a.two", "wasm", true)
+    ))
+    .unwrap();
+    assert!(twice.validate(&proxies).iter().any(|e| e.contains("two `Tcp`")));
+
+    // Two different kinds is the whole point of the table.
+    let both = Manifest::parse(&format!(
+        "{}\n[[control]]\nid = 1\nkind = \"tcp\"\nname = \"Security\"\nport = 12345\n\n         [[control]]\nid = 2\nkind = \"mqtt\"\nname = \"Automation\"\nport = 8883\ntls = true\n",
+        manifest("a.panel", "wasm", true)
+    ))
+    .unwrap();
+    assert!(both.validate(&proxies).is_empty(), "{:?}", both.validate(&proxies));
+}
+
+/// A mesh node is matched on what its descriptor says, and a node that grew a cluster in a
+/// firmware update still matches — a descriptor lists what a device can do, and requiring the
+/// exact set would refuse the same product a year later.
+#[test]
+fn a_zigbee_fingerprint_matches_a_superset() {
+    use driver_sdk::manifest::ZigbeeMatch;
+    let rule = ZigbeeMatch { profile: 49297, endpoint: 1, in_clusters: vec![2, 3, 11, 13] };
+
+    assert!(rule.matches(49297, 1, &[2, 3, 11, 13]));
+    assert!(rule.matches(49297, 1, &[2, 3, 11, 13, 25]), "a superset still matches");
+    assert!(!rule.matches(49297, 1, &[2, 3, 11]), "a missing cluster does not");
+    assert!(!rule.matches(260, 1, &[2, 3, 11, 13]), "nor another profile");
+    assert!(!rule.matches(49297, 2, &[2, 3, 11, 13]), "nor another endpoint");
 }

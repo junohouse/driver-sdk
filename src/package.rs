@@ -160,6 +160,21 @@ fn payload_for<R: Read + std::io::Seek>(
 ) -> Result<(String, Vec<u8>)> {
     let wanted: &[&str] = match manifest.driver.runtime {
         RuntimeKind::Declarative => &["commands.toml"],
+        // Named for the driver, not fixed, because one package can carry several mesh devices
+        // and each needs its own table — a Hue package's shape, on a different network.
+        RuntimeKind::Zigbee => {
+            let named = format!("zigbee/{}.json", manifest.driver.id);
+            let Some(i) = zip.index_for_name(&named) else {
+                bail!(
+                    "{} declares runtime `zigbee` but the package carries no `{named}` — \
+                     the table is the driver",
+                    manifest.driver.id
+                );
+            };
+            let mut bytes = Vec::new();
+            zip.by_index(i)?.read_to_end(&mut bytes)?;
+            return Ok((named, bytes));
+        }
         RuntimeKind::Wasm => &["driver.wasm"],
         RuntimeKind::Python => &["driver.py"],
         // Named per platform inside the archive, and resolved below — one package
@@ -671,6 +686,25 @@ impl Package {
         // a package that declares `wasm` — half a megabyte nothing will ever load, inside an
         // archive whose whole claim is that it carries sandboxed code. `payload_for` picks by
         // the declared runtime, so it installs and runs correctly and nobody finds out.
+        // A mesh driver's payload is its decode table, named for the driver so one package can
+        // carry several. Copied under the same rule as everything else here: only when a
+        // manifest asks for it, so a stray `zigbee/` directory beside a wasm driver does not
+        // travel as though it meant something.
+        for m in manifests.iter().filter(|m| m.driver.runtime == RuntimeKind::Zigbee) {
+            let name = format!("zigbee/{}.json", m.driver.id);
+            let p = dir.join(&name);
+            if !p.exists() {
+                bail!(
+                    "{} declares runtime `zigbee` but there is no {name} beside it — \
+                     the table is the driver",
+                    m.driver.id
+                );
+            }
+            zip.start_file(&name, opts)?;
+            zip.write_all(&std::fs::read(&p)?)?;
+            wrote_payload = true;
+        }
+
         let wants_native = manifests
             .iter()
             .any(|m| m.driver.runtime == RuntimeKind::Native);
@@ -735,6 +769,17 @@ impl Package {
     }
 }
 
+/// One way into a device, as the catalog and the configurator need to see it.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Connection {
+    pub id: crate::LocalId,
+    /// `network`, `mqtt`, `ir_out`, `zigbee` — see [`crate::manifest::ControlKind`].
+    pub kind: String,
+    pub name: String,
+    /// Whether an installer has to wire it to a port on another device.
+    pub patched: bool,
+}
+
 /// A driver core knows about, whether or not any device uses it. This is the "available
 /// drivers" list the configurator picks from when adding a device.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -760,10 +805,11 @@ pub struct Available {
     /// Another way into the same product — see [`crate::manifest::DriverMeta::variant_of`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant_of: Option<String>,
-    /// How it reaches its hardware — see [`crate::manifest::Manifest::reach`]. What tells one
-    /// variant from another, and what decides whether a choice has to be offered at all.
+    /// Every connection this driver declares: its id, kind and name, in the order the
+    /// manifest lists them. A driver with more than one is reached more than one way, and
+    /// something has to ask which — see `Device::connection`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub reach: Vec<String>,
+    pub connections: Vec<Connection>,
     /// How many devices currently use it.
     pub devices: usize,
     pub readme: Option<String>,
