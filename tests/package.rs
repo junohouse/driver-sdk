@@ -139,7 +139,12 @@ fn a_variant_must_name_a_sibling() {
     let proxies = ProxyRegistry::bundled().unwrap();
 
     let lead = manifest("apple.tv", "declarative", true);
-    let ir = manifest_with("apple.tv.ir", "declarative", false, "variant_of = \"apple.tv\"");
+    let ir = manifest_with(
+        "apple.tv.ir",
+        "declarative",
+        false,
+        "variant_of = \"apple.tv\"",
+    );
     let good = archive_of(&[
         ("manifests/tv.toml", lead.as_bytes()),
         ("manifests/ir.toml", ir.as_bytes()),

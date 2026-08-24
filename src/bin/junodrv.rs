@@ -127,6 +127,7 @@ fn run() -> anyhow::Result<()> {
                     // wrong, and would get it wrong differently in each reader.
                     kind: m.kind().map(str::to_string),
                     variant_of: m.driver.variant_of.clone(),
+                    reach: m.reach(),
                     repo: flag("--repo").unwrap_or_default(),
                     source,
                     proxies: m.proxy.iter().map(|p| p.ty.clone()).collect(),

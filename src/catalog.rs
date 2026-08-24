@@ -66,6 +66,14 @@ pub struct Entry {
     /// and strangers in a catalog until this says otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant_of: Option<String>,
+    /// How this driver reaches its hardware — from [`crate::manifest::Manifest::reach`].
+    ///
+    /// In the index because it is what tells one variant from another, and a catalog has to
+    /// draw that distinction for products nobody has installed: two variants reached
+    /// differently are a question somebody has to answer, and two reached the same way are one
+    /// row whose own setup flow settles which it is.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reach: Vec<String>,
     /// `junohouse/sony-bravia-ip`. The provenance claim.
     #[serde(default)]
     pub repo: String,
