@@ -289,3 +289,44 @@ fn a_kind_serialises_as_the_word_the_manifest_uses() {
         );
     }
 }
+
+/// One port, two contracts, and a closed set of them.
+///
+/// The 3.5 mm jacks on the hardware are IR or serial depending on what somebody plugged in,
+/// and nothing electrical decides it. What must not happen is a port claiming a contract the
+/// hardware was never built for, because something downstream will route a room through it.
+#[test]
+fn a_combo_port_may_only_be_what_it_declared() {
+    use driver_sdk::manifest::Manifest;
+    let proxies = ProxyRegistry::bundled().unwrap();
+
+    let m = Manifest::parse(
+        "[driver]\nid = \"x.gc\"\nname = \"iTach\"\nversion = \"1.0.0\"\nruntime = \"wasm\"\n\n\
+         [[proxy]]\nid = 1\ntype = \"ir_out\"\nalternates = [\"serial_port\"]\nname = \"Port 1\"\n\n\
+         [[proxy]]\nid = 2\ntype = \"relay\"\nname = \"Relay 1\"\n",
+    )
+    .unwrap();
+    assert!(m.validate(&proxies).is_empty(), "{:?}", m.validate(&proxies));
+
+    assert!(m.binding_may_be(1, "ir_out"), "what it already is");
+    assert!(m.binding_may_be(1, "serial_port"), "and what else it can be");
+    assert!(!m.binding_may_be(1, "relay"), "but not a contract it never offered");
+    assert!(!m.binding_may_be(2, "ir_out"), "a plain port has no alternates");
+    assert!(!m.binding_may_be(9, "ir_out"), "nor does a proxy that does not exist");
+
+    // A typo'd alternate is a port that can never be switched, discovered by somebody trying.
+    let typo = Manifest::parse(
+        "[driver]\nid = \"x.y\"\nname = \"Y\"\nversion = \"1.0.0\"\nruntime = \"wasm\"\n\n\
+         [[proxy]]\nid = 1\ntype = \"ir_out\"\nalternates = [\"serial\"]\n",
+    )
+    .unwrap();
+    assert!(typo.validate(&proxies).iter().any(|e| e.contains("`serial` is not a proxy")));
+
+    // And naming what it already is says nothing, so it is a mistake rather than a no-op.
+    let same = Manifest::parse(
+        "[driver]\nid = \"x.z\"\nname = \"Z\"\nversion = \"1.0.0\"\nruntime = \"wasm\"\n\n\
+         [[proxy]]\nid = 1\ntype = \"ir_out\"\nalternates = [\"ir_out\"]\n",
+    )
+    .unwrap();
+    assert!(same.validate(&proxies).iter().any(|e| e.contains("already what it is")));
+}

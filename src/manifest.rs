@@ -293,6 +293,19 @@ pub struct ProxyDecl {
     pub id: LocalId,
     #[serde(rename = "type")]
     pub ty: String,
+    /// What else this same endpoint can be, when the hardware is one port and two contracts.
+    ///
+    /// A 3.5 mm jack on a controller is an IR emitter or a serial lead depending on what
+    /// somebody plugged into it, and nothing electrical decides which — the installer does,
+    /// once, when they wire the rack. Without this the driver has to declare two bindings for
+    /// one socket and hope only one is ever used, which puts a port in the house that does not
+    /// exist and lets a room be routed through it.
+    ///
+    /// `type` is what it is until somebody says otherwise. The alternates are the rest of the
+    /// closed set: a binding can be switched to one of them and to nothing else, so a port
+    /// cannot quietly become a contract the hardware was never built for.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternates: Vec<String>,
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
@@ -813,6 +826,18 @@ impl Manifest {
         self.children.as_ref().is_some_and(|c| c.auto_adopt)
     }
 
+    /// Whether this driver says one of its own bindings may present `want`.
+    ///
+    /// The gate on switching a combo port. A binding whose type is not in the driver's own
+    /// closed set is a port claiming a contract its hardware was never built for, which
+    /// something downstream will then route a room through.
+    pub fn binding_may_be(&self, local: LocalId, want: &str) -> bool {
+        self.proxy
+            .iter()
+            .find(|p| p.id == local)
+            .is_some_and(|p| p.ty == want || p.alternates.iter().any(|a| a == want))
+    }
+
     /// The proxy the driver leads with — explicit `primary`, else the first declared.
     pub fn primary_proxy(&self) -> Option<LocalId> {
         self.proxy
@@ -947,6 +972,20 @@ impl Manifest {
                             errs.push(format!("proxy {}: {msg}", p.id));
                         }
                     }
+                }
+            }
+        }
+        for p in &self.proxy {
+            for alt in &p.alternates {
+                if registry.get(alt).is_none() {
+                    errs.push(format!("proxy {}: `{alt}` is not a proxy in this core", p.id));
+                }
+                if *alt == p.ty {
+                    errs.push(format!(
+                        "proxy {}: `{alt}` is already what it is — an alternate is what else \
+                         the same port can be",
+                        p.id
+                    ));
                 }
             }
         }
