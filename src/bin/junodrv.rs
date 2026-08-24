@@ -140,7 +140,7 @@ fn run() -> anyhow::Result<()> {
                     // wrong, and would get it wrong differently in each reader.
                     kind: m.kind().map(str::to_string),
                     variant_of: m.driver.variant_of.clone(),
-                    connections: m.control.iter().map(|c| format!("{:?}", c.kind).to_lowercase()).collect(),
+                    connections: m.control.iter().map(|c| c.kind.as_str().to_string()).collect(),
                     repo: flag("--repo").unwrap_or_default(),
                     source,
                     proxies: m.proxy.iter().map(|p| p.ty.clone()).collect(),

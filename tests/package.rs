@@ -259,3 +259,33 @@ fn a_zigbee_fingerprint_matches_a_superset() {
     assert!(!rule.matches(260, 1, &[2, 3, 11, 13]), "nor another profile");
     assert!(!rule.matches(49297, 2, &[2, 3, 11, 13]), "nor another endpoint");
 }
+
+/// The word a kind is written with, and the one every reader matches on.
+///
+/// `IrOut` debugs as `IrOut`; lowercasing that gives `irout`, which is not what any manifest
+/// says and not what the catalog's own table of connection words is keyed on. It reached a
+/// running controller before anybody looked.
+#[test]
+fn a_kind_serialises_as_the_word_the_manifest_uses() {
+    use driver_sdk::manifest::ControlKind as K;
+    for (kind, word) in [
+        (K::IrOut, "ir_out"),
+        (K::Serial, "serial"),
+        (K::Relay, "relay"),
+        (K::Contact, "contact"),
+        (K::Network, "network"),
+        (K::Tcp, "tcp"),
+        (K::Mqtt, "mqtt"),
+        (K::Hap, "hap"),
+        (K::Zigbee, "zigbee"),
+    ] {
+        assert_eq!(kind.as_str(), word);
+        // And it is the spelling a manifest actually parses, rather than a second list that
+        // agrees with serde today.
+        assert_eq!(
+            serde_json::to_string(&kind).unwrap(),
+            format!("\"{word}\""),
+            "{kind:?} must serialise as it is written"
+        );
+    }
+}

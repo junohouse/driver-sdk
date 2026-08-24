@@ -97,6 +97,26 @@ impl ControlKind {
         }
     }
 
+    /// The word the manifest is written with.
+    ///
+    /// Not `format!("{self:?}")`: `IrOut` debugs as `IrOut`, which lowercases to `irout` — a
+    /// spelling no manifest uses, nothing matches on, and which reached the catalog before
+    /// anybody noticed. The serde rename is the truth, so this repeats it once rather than
+    /// letting every caller re-derive it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ControlKind::Relay => "relay",
+            ControlKind::Contact => "contact",
+            ControlKind::IrOut => "ir_out",
+            ControlKind::Serial => "serial",
+            ControlKind::Network => "network",
+            ControlKind::Tcp => "tcp",
+            ControlKind::Mqtt => "mqtt",
+            ControlKind::Hap => "hap",
+            ControlKind::Zigbee => "zigbee",
+        }
+    }
+
     /// Whether an installer has to wire this to something before the driver can work.
     pub fn is_patched(self) -> bool {
         self.provider_proxy().is_some()
