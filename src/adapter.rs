@@ -113,10 +113,7 @@ pub enum Up {
     ///
     /// Held in memory only. It is a live view of a radio rather than a fact about the house, it
     /// is worthless after a restart, and the adapter republishes it on the next `Open` anyway.
-    Detail {
-        coord: u32,
-        data: Value,
-    },
+    Detail { coord: u32, data: Value },
     /// Something worth showing an integrator. Kept separate from stderr so an adapter can be
     /// deliberate about what surfaces in the UI versus what is only in the log.
     Log {

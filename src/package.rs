@@ -783,6 +783,14 @@ pub struct Available {
     /// say what else is in it first.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub package: String,
+    /// The version this driver has been held at by hand, if any — see `Runtime::pin_of`.
+    ///
+    /// What stops a rollback from being undone by the next start. A house that went back to
+    /// 1.2.0 because 1.3.0 broke a television did not ask to be moved forward again in an
+    /// hour, and the automatic path cannot tell the difference between a build somebody has
+    /// not seen yet and one they have already rejected.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub pinned: String,
 }
 
 #[cfg(test)]

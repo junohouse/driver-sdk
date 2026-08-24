@@ -13,7 +13,8 @@
 //! Deliberately not `clap`. A handful of subcommands and one flag do not justify a dependency
 //! on a crate this size, and every driver author would pay for it in build time.
 
-use driver_sdk::catalog::{DiscoveryHints, Entry, Release, Source};
+use anyhow::Context;
+use driver_sdk::catalog::{DiscoveryHints, Entry, Release, Source, notes_for};
 use driver_sdk::package::Package;
 use driver_sdk::proxy::{ProxyRegistry, docgen};
 use std::path::{Path, PathBuf};
@@ -30,7 +31,7 @@ usage:
   junodrv pack <dir> [--out <dir>]   validate and build a .junodrv
   junodrv check <dir>                validate only
   junodrv entry <pkg.junodrv> --repo R --url U --sha256 S [--version V] [--description D]
-                              [--source open|closed]
+                              [--source open|closed] [--changelog <CHANGELOG.md>]
                                      emit the registry index rows for a built package
   junodrv docs [--out <dir>]         render the proxy reference as markdown
 
@@ -106,6 +107,18 @@ fn run() -> anyhow::Result<()> {
             // Unstated rather than guessed. An absent `source` reads as open in the catalog,
             // which is right for every row written before the field existed, and a wrong guess
             // here would either 404 a Source link or hide one that works.
+            // What changed, for the pane that has to ask somebody whether to install it. Read
+            // here rather than in CI so there is one parser for the file and one rule about
+            // which versions get notes at all — see `catalog::notes_for`, which answers empty
+            // for a prerelease however the file is written.
+            let notes = match flag("--changelog") {
+                None => String::new(),
+                Some(path) => notes_for(
+                    &std::fs::read_to_string(&path).with_context(|| format!("reading {path}"))?,
+                    &version,
+                ),
+            };
+
             let source = match flag("--source").as_deref() {
                 None => None,
                 Some("open") => Some(Source::Open),
@@ -151,6 +164,7 @@ fn run() -> anyhow::Result<()> {
                         // What build this is, while nothing is released — see `Release::commit`.
                         commit: flag("--commit").unwrap_or_default(),
                         size,
+                        notes: notes.clone(),
                     }],
                 })
                 .collect();

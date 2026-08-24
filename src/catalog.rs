@@ -177,6 +177,18 @@ pub struct Release {
     /// by hand. Then "is this current" is unanswerable, which is the honest answer.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub commit: String,
+    /// What changed in this release, as Markdown — the section `junodrv entry --changelog`
+    /// lifted out of the driver's own CHANGELOG for this version.
+    ///
+    /// In the index rather than in the package because it has to be readable *before* the
+    /// decision to install: an update that needs a person to say yes has to be able to say
+    /// why, and the artifact answering that question is the one not downloaded yet.
+    ///
+    /// Always empty on a prerelease. A beta is a rolling build of `main` with a run number on
+    /// it — there is no released version for a changelog section to be about, and asking every
+    /// push to write release notes gets notes nobody wrote.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub notes: String,
 }
 
 /// What a discovery probe saw on the network.
@@ -284,6 +296,20 @@ impl Entry {
             .map(|(_, r)| r)
     }
 
+    /// The newest release published, whether or not this core can run it.
+    ///
+    /// Separate from [`Entry::best_for`], which is what to *install*. This is what to *say*: a
+    /// controller too old for the newest build has to be told that is why it is not being
+    /// offered one, and `best_for` on its own cannot tell "nothing newer exists" from "the
+    /// newer one is out of reach".
+    pub fn newest(&self) -> Option<&Release> {
+        self.versions
+            .iter()
+            .filter_map(|r| r.semver().map(|v| (v, r)))
+            .max_by(|(a, _), (b, _)| a.cmp(b))
+            .map(|(_, r)| r)
+    }
+
     /// Releases this core cannot run, newest first — so the UI can say *why* an update is not
     /// being offered instead of just hiding it.
     pub fn blocked_for(&self, core_version: &semver::Version) -> Vec<&Release> {
@@ -312,5 +338,320 @@ impl Release {
             // install is safer than guessing it is compatible.
             Err(_) => false,
         }
+    }
+}
+
+/// What a controller should do about a release that is not the one it is running.
+///
+/// The whole update policy, in one place, because it is one decision made in three: the pane
+/// that badges a driver, the check that runs at start, and the button somebody presses all
+/// have to agree about whether a build may be taken without asking. Two of them agreeing and
+/// the third not is an update that installs itself under a house that was never told.
+///
+/// The rule is semver, which is the one thing a version number already means. Same major:
+/// the new build is a drop-in for the old one, and a controller takes it on its own. New
+/// major: the author is saying something does not carry over — a setting that moved, a
+/// pairing that has to be done again, a device class that changed — so it waits for a person
+/// and shows them [`Release::notes`] first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Update {
+    /// Running what the catalog offers, or unable to tell — which is not the same thing, but
+    /// calls for the same nothing.
+    Current,
+    /// Take it. Same major, so nothing a house has configured stops meaning what it meant.
+    Automatic { version: String },
+    /// Newer, and waiting to be asked for.
+    Manual { version: String, why: String },
+    /// Newer, and this controller cannot run it. Said out loud rather than hidden, so a driver
+    /// that is stuck says why it is stuck.
+    Blocked { version: String, needs_core: String },
+}
+
+impl Update {
+    /// Whether a controller may install this without being told to.
+    pub fn is_automatic(&self) -> bool {
+        matches!(self, Update::Automatic { .. })
+    }
+
+    /// Whether there is anything newer at all — automatic or not.
+    pub fn is_offered(&self) -> bool {
+        !matches!(self, Update::Current)
+    }
+
+    /// The version on offer, if there is one.
+    pub fn version(&self) -> Option<&str> {
+        match self {
+            Update::Current => None,
+            Update::Automatic { version }
+            | Update::Manual { version, .. }
+            | Update::Blocked { version, .. } => Some(version),
+        }
+    }
+}
+
+impl Release {
+    /// What to do about this release, given what is installed.
+    ///
+    /// `installed_commit` is what answers the question on a prerelease. A beta is a rolling
+    /// build — every push to `main` is `1.2.0-beta.N` of the same unreleased `1.2.0`, and the
+    /// run number is not a promise about anything — so on either side being a prerelease the
+    /// comparison is the build stamp, and any difference is taken automatically. That is what
+    /// beta *is*: a house that asked for the newest build, continuously.
+    ///
+    /// A build with no commit and no readable version is a sideload or something assembled by
+    /// hand. Unknown is not stale, and offering an update against a build nothing can identify
+    /// would be telling somebody to fix something nobody can see.
+    pub fn update_from(
+        &self,
+        installed_version: &str,
+        installed_commit: &str,
+        core: &semver::Version,
+    ) -> Update {
+        // Every "there is something newer" answer goes through here, so a release this core
+        // cannot run cannot be reported as an update by one path and blocked by another.
+        fn newer(r: &Release, core: &semver::Version, u: impl FnOnce(String) -> Update) -> Update {
+            if r.runs_on(core) {
+                u(r.version.clone())
+            } else {
+                Update::Blocked {
+                    version: r.version.clone(),
+                    needs_core: r.core_req.clone(),
+                }
+            }
+        }
+
+        let (Ok(have), Some(want)) = (semver::Version::parse(installed_version), self.semver())
+        else {
+            // Nothing to compare but the stamp.
+            return match (installed_commit.trim(), self.commit.trim()) {
+                ("", _) | (_, "") => Update::Current,
+                (a, b) if a == b => Update::Current,
+                _ => newer(self, core, |version| Update::Automatic { version }),
+            };
+        };
+
+        // Rolling. Neither side's number moves between builds, so it cannot be the answer.
+        if !have.pre.is_empty() || !want.pre.is_empty() {
+            return match (installed_commit.trim(), self.commit.trim()) {
+                ("", _) | (_, "") => Update::Current,
+                (a, b) if a == b => Update::Current,
+                _ => newer(self, core, |version| Update::Automatic { version }),
+            };
+        }
+
+        if want <= have {
+            return Update::Current;
+        }
+
+        // Before 1.0 the minor carries what the major carries after it — the convention every
+        // package manager already reads this way, and the one a driver at 0.4 is relying on.
+        let breaking = if have.major == 0 || want.major == 0 {
+            want.major != have.major || want.minor != have.minor
+        } else {
+            want.major != have.major
+        };
+
+        if breaking {
+            newer(self, core, |version: String| Update::Manual {
+                why: format!(
+                    "{version} is a new major version of a driver installed at {have} — \
+                     settings, pairings or devices may not carry over"
+                ),
+                version,
+            })
+        } else {
+            newer(self, core, |version| Update::Automatic { version })
+        }
+    }
+}
+
+/// The section of a CHANGELOG that is about one version, as Markdown.
+///
+/// Keep-a-Changelog shape, loosely: a heading that names the version, everything under it, up
+/// to the next heading at the same level or above. Loosely because a driver author writes this
+/// file for people, and refusing to read `## [1.2.0] — 2026-08-01` because of the brackets or
+/// the dash would mean the notes silently going missing from the one screen they exist for.
+///
+/// Empty for a prerelease, on purpose and not by accident of the file: see [`Release::notes`].
+pub fn notes_for(changelog: &str, version: &str) -> String {
+    let version = version.trim();
+    if version.is_empty() || semver::Version::parse(version).is_ok_and(|v| !v.pre.is_empty()) {
+        return String::new();
+    }
+    let level = |line: &str| line.chars().take_while(|c| *c == '#').count();
+    let names = |line: &str| {
+        line.split(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-'))
+            .any(|word| word == version || word.strip_prefix('v') == Some(version))
+    };
+
+    let mut depth = None;
+    let mut out: Vec<&str> = Vec::new();
+    for line in changelog.lines() {
+        match depth {
+            None => {
+                if level(line) > 0 && names(line) {
+                    depth = Some(level(line));
+                }
+            }
+            Some(d) => {
+                if level(line) > 0 && level(line) <= d {
+                    break;
+                }
+                out.push(line);
+            }
+        }
+    }
+    while out.last().is_some_and(|l| l.trim().is_empty()) {
+        out.pop();
+    }
+    while out.first().is_some_and(|l| l.trim().is_empty()) {
+        out.remove(0);
+    }
+    out.join("\n")
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::*;
+
+    fn core() -> semver::Version {
+        semver::Version::parse("0.9.0").unwrap()
+    }
+
+    fn release(version: &str, commit: &str, core_req: &str) -> Release {
+        Release {
+            version: version.into(),
+            core_req: core_req.into(),
+            url: String::new(),
+            sha256: String::new(),
+            size: 0,
+            commit: commit.into(),
+            notes: String::new(),
+        }
+    }
+
+    #[test]
+    fn a_patch_or_a_minor_is_taken_without_asking() {
+        assert!(
+            release("1.2.1", "", "")
+                .update_from("1.2.0", "", &core())
+                .is_automatic()
+        );
+        assert!(
+            release("1.3.0", "", "")
+                .update_from("1.2.0", "", &core())
+                .is_automatic()
+        );
+    }
+
+    #[test]
+    fn a_new_major_waits_to_be_asked_for() {
+        let update = release("2.0.0", "", "").update_from("1.2.0", "", &core());
+        assert!(!update.is_automatic() && update.is_offered());
+        assert!(matches!(update, Update::Manual { .. }));
+    }
+
+    /// Before 1.0 the minor is where a break lands, which is what every other package manager
+    /// reads it as — and what a driver still at 0.x is relying on.
+    #[test]
+    fn before_one_point_oh_the_minor_is_the_break() {
+        assert!(matches!(
+            release("0.5.0", "", "").update_from("0.4.2", "", &core()),
+            Update::Manual { .. }
+        ));
+        assert!(
+            release("0.4.3", "", "")
+                .update_from("0.4.2", "", &core())
+                .is_automatic()
+        );
+    }
+
+    /// Beta is a rolling build of one unreleased version: the number says nothing and the
+    /// commit says everything.
+    #[test]
+    fn a_beta_follows_the_commit() {
+        let build = release("1.0.0-beta.41", "bbbb", "");
+        assert!(
+            build
+                .update_from("1.0.0-beta.40", "aaaa", &core())
+                .is_automatic()
+        );
+        assert!(
+            !build
+                .update_from("1.0.0-beta.40", "bbbb", &core())
+                .is_offered()
+        );
+        // Not every beta build even moves the run number, and it would not matter if it did.
+        assert!(
+            build
+                .update_from("1.0.0-beta.41", "aaaa", &core())
+                .is_automatic()
+        );
+    }
+
+    #[test]
+    fn nothing_is_said_about_a_build_nothing_can_identify() {
+        // A sideload: no commit on the installed side, and a version that means nothing here.
+        assert!(
+            !release("1.0.0-beta.41", "bbbb", "")
+                .update_from("1.0.0-beta.40", "", &core())
+                .is_offered()
+        );
+        assert!(
+            !release("1.2.0", "", "")
+                .update_from("1.2.0", "", &core())
+                .is_offered()
+        );
+        assert!(
+            !release("1.1.0", "", "")
+                .update_from("1.2.0", "", &core())
+                .is_offered()
+        );
+    }
+
+    /// A release this core cannot run is still shown — hiding it makes a stuck driver look
+    /// current.
+    #[test]
+    fn a_release_needing_a_newer_core_is_named_not_hidden() {
+        assert_eq!(
+            release("2.0.0", "", ">=1.0").update_from("1.2.0", "", &core()),
+            Update::Blocked {
+                version: "2.0.0".into(),
+                needs_core: ">=1.0".into()
+            }
+        );
+        assert_eq!(
+            release("1.2.1", "", ">=1.0").update_from("1.2.0", "", &core()),
+            Update::Blocked {
+                version: "1.2.1".into(),
+                needs_core: ">=1.0".into()
+            }
+        );
+    }
+
+    const CHANGELOG: &str = "\
+# Changelog
+
+## [1.2.0] — 2026-08-01
+
+### Added
+- Input switching over the CNAME.
+
+## 1.1.0
+
+- The first one.
+";
+
+    #[test]
+    fn the_notes_are_the_section_about_that_version() {
+        assert_eq!(
+            notes_for(CHANGELOG, "1.2.0"),
+            "### Added\n- Input switching over the CNAME."
+        );
+        assert_eq!(notes_for(CHANGELOG, "1.1.0"), "- The first one.");
+        assert_eq!(notes_for(CHANGELOG, "9.9.9"), "");
+        // A beta has no released version for a section to be about.
+        assert_eq!(notes_for(CHANGELOG, "1.2.0-beta.4"), "");
     }
 }

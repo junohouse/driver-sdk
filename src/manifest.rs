@@ -302,6 +302,53 @@ pub struct AdapterDecl {
     pub exec: String,
     #[serde(default)]
     pub args: Vec<String>,
+    /// The adapter's own device is the only thing it talks to.
+    ///
+    /// A radio protocol has one process holding several coordinators, and the adapter's device
+    /// is the software rather than any of them — so nothing starts until a coordinator is
+    /// adopted under it. A service has one server and no children: the device somebody
+    /// configured *is* the thing, and waiting for a child that will never exist means an
+    /// adapter that never runs.
+    #[serde(default)]
+    pub single: bool,
+    /// A container this adapter cannot work without. See [`DockerDecl`].
+    #[serde(default)]
+    pub docker: Option<DockerDecl>,
+}
+
+/// A container the controller runs for an adapter.
+///
+/// Most adapters are a script and a radio and need nothing of the sort. Some are a front end to
+/// software that is only distributed as an image — Music Assistant is a Python application with
+/// ffmpeg, a database and two dozen provider integrations behind it, and packaging that into a
+/// `.junodrv` would mean maintaining somebody else's build.
+///
+/// So the driver names an image, and the controller runs it *if it can*. Docker is not a
+/// requirement of Juno and never will be: a controller without it refuses this driver at install
+/// with a sentence saying why, rather than accepting it and being quietly broken. See
+/// `crate::driver::docker` in the controller for that half.
+///
+/// The container is the controller's, not the operator's: it is named after the driver, its
+/// volumes are named after the driver, and it is removed when the last device using that driver
+/// leaves the project. An operator who wants to run Music Assistant themselves can — and then
+/// this declaration is the wrong way to reach it, which is what the address property is for.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DockerDecl {
+    /// Fully qualified, with a tag. `latest` is refused at lint: a house that upgrades its media
+    /// server because somebody pushed a tag is a house that broke on its own.
+    pub image: String,
+    /// `host:container`, as `docker run -p` takes them. Published rather than host-networked
+    /// because a host network is a Linux-only trick and the ports an adapter needs are known.
+    #[serde(default)]
+    pub ports: Vec<String>,
+    /// `name:/path`. `name` is a *named volume*, which the controller prefixes with the driver
+    /// id — never a path on the host. A driver that could name a host path could name any of
+    /// them.
+    #[serde(default)]
+    pub volumes: Vec<String>,
+    #[serde(default)]
+    pub env: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
