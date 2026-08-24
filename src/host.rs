@@ -416,6 +416,24 @@ pub struct HttpRequest {
     /// changes is only how much of the answer reaches the driver.
     #[serde(default)]
     pub binary: bool,
+    /// Whether this request answering says the *device* is reachable.
+    ///
+    /// True for almost everything: a driver with one address makes one kind of request, and a
+    /// silent socket means the thing is gone. It is false for a poll of something *beside* the
+    /// device — a Juno screen's audio player is a second daemon on the same Pi, and the screen is
+    /// a page that finds the controller by itself and is never asked anything at all. With the
+    /// audio player stopped, the only request core made failed, and a working screen was reported
+    /// as one it could not connect to.
+    ///
+    /// So a driver can say which of its requests is the health of the device and which is the
+    /// state of a part of it. A `false` request that fails is still a failed request — the driver
+    /// hears about it and the reply never arrives — it just does not condemn the whole device.
+    #[serde(default = "yes", skip_serializing_if = "is_yes")]
+    pub reachability: bool,
+}
+
+fn is_yes(v: &bool) -> bool {
+    *v
 }
 
 impl HttpRequest {
@@ -427,7 +445,17 @@ impl HttpRequest {
             body: None,
             body_bytes: Vec::new(),
             binary: false,
+            reachability: true,
         }
+    }
+
+    /// A poll of something beside the device, whose silence is not the device's silence.
+    ///
+    /// See [`Self::reachability`]. For the request that asks a screen's audio player what it is
+    /// playing: a stopped player is a stopped player, not a screen nobody can reach.
+    pub fn beside_the_device(mut self) -> Self {
+        self.reachability = false;
+        self
     }
 
     /// Send bytes, and take the answer as bytes and headers.
