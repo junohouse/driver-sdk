@@ -105,6 +105,48 @@ pub struct DriverMeta {
     /// alphabetical order, which is stable but says nothing.
     #[serde(default)]
     pub primary: bool,
+    /// What the whole package is called, when that is not the lead driver's own name.
+    ///
+    /// A catalog lists *products*, and a product's name is not always a driver's. The Hue
+    /// package leads with a driver called `Philips Hue Bridge`, which is the honest name for
+    /// the driver and the wrong name for the shelf — nobody buys a bridge, they buy Philips
+    /// Hue. TP-Link is worse: the lead driver is `TP-Link Account`, a cloud login, and the
+    /// product on the box is Tapo.
+    ///
+    /// Unset means the lead driver's `name` is the product name, which is true of most
+    /// packages — an Apple TV package leads with a driver called Apple TV.
+    ///
+    /// Only read on the driver a package leads with. On any other it says nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product: Option<String>,
+    /// What this product *is*, as a device class — a proxy type name.
+    ///
+    /// Not what the lead driver implements: a Hue package leads with a bridge, and a bridge is
+    /// how the lights are reached rather than what somebody bought. Declaring `kind = "light"`
+    /// is what puts Philips Hue under Lighting with a bulb beside it instead of under System
+    /// with a router.
+    ///
+    /// Validated against the proxy registry, so a typo fails at `junodrv check` rather than
+    /// filing a product under a group that does not exist. Unset falls back to the proxy the
+    /// driver leads with, which is right for anything that is the thing it controls — a
+    /// television, a receiver — and wrong for every hub.
+    ///
+    /// Only read on the driver a package leads with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// The same product as the driver named here, reached a different way.
+    ///
+    /// An Apple TV is a native driver over its Companion link and a `commands.toml` of IR codes
+    /// over an emitter. That is one product with two ways in, not two products, and a catalog
+    /// listing both as siblings asks somebody to choose between two nearly identical rows
+    /// before they know there is a choice to make. With this the catalog carries one row, and
+    /// the choice happens where it belongs — while adding it, where the answer changes the
+    /// setup that follows.
+    ///
+    /// Names another driver in the same package. Discovery beats the choice outright: something
+    /// heard on the network was heard *as* one of these, so that is the one that gets set up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant_of: Option<String>,
     /// This driver can replace a logical group's per-device fan-out with one native request.
     ///
     /// The flag is the compatibility gate for [`crate::DriverModule::on_group`]. Core never
@@ -656,6 +698,27 @@ impl Manifest {
             .map(|p| p.id)
     }
 
+    /// What this product is, as a device class — declared [`DriverMeta::kind`], else the proxy
+    /// type the driver leads with.
+    ///
+    /// The fallback is right for a device that is the thing it controls and wrong for every
+    /// hub, which is exactly why the field exists. It is here so a package written before the
+    /// field did lands somewhere rather than nowhere.
+    pub fn kind(&self) -> Option<&str> {
+        self.driver.kind.as_deref().or_else(|| {
+            self.proxy
+                .iter()
+                .find(|p| p.primary)
+                .or_else(|| self.proxy.first())
+                .map(|p| p.ty.as_str())
+        })
+    }
+
+    /// What a catalog calls this package — declared [`DriverMeta::product`], else its own name.
+    pub fn product(&self) -> &str {
+        self.driver.product.as_deref().unwrap_or(&self.driver.name)
+    }
+
     pub fn control(&self, id: LocalId) -> Option<&ControlDecl> {
         self.control.iter().find(|c| c.id == id)
     }
@@ -763,6 +826,17 @@ impl Manifest {
         }
         if self.proxy.iter().filter(|p| p.primary).count() > 1 {
             errs.push("more than one proxy marked primary".into());
+        }
+
+        // A typo here is otherwise silent: the product files itself under a group nothing else
+        // is in, and nobody notices until somebody goes looking for it on the shelf.
+        if let Some(kind) = &self.driver.kind
+            && registry.get(kind).is_none()
+        {
+            errs.push(format!("driver kind: `{kind}` is not a proxy in this core"));
+        }
+        if self.driver.variant_of.as_deref() == Some(self.driver.id.as_str()) {
+            errs.push("driver variant_of names this driver itself".into());
         }
 
         let mut seen = BTreeSet::new();

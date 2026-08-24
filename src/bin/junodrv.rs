@@ -120,6 +120,13 @@ fn run() -> anyhow::Result<()> {
                     name: m.driver.name.clone(),
                     manufacturer: m.driver.manufacturer.clone(),
                     parent: m.driver.parent.clone(),
+                    product: m.driver.product.clone(),
+                    // Resolved rather than copied: a driver that declared no `kind` still has
+                    // to land in a group, and working the fallback out here means the catalog
+                    // at the far end never has to guess from `proxies` — which gets every hub
+                    // wrong, and would get it wrong differently in each reader.
+                    kind: m.kind().map(str::to_string),
+                    variant_of: m.driver.variant_of.clone(),
                     repo: flag("--repo").unwrap_or_default(),
                     source,
                     proxies: m.proxy.iter().map(|p| p.ty.clone()).collect(),

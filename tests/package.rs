@@ -21,6 +21,12 @@ fn archive_of(files: &[(&str, &[u8])]) -> Vec<u8> {
 }
 
 fn manifest(id: &str, runtime: &str, primary: bool) -> String {
+    manifest_with(id, runtime, primary, "")
+}
+
+/// The same, with extra lines inside `[driver]` — where they have to go, since everything
+/// after the first `[[proxy]]` belongs to the proxy.
+fn manifest_with(id: &str, runtime: &str, primary: bool, extra: &str) -> String {
     format!(
         r#"
 [driver]
@@ -30,7 +36,7 @@ manufacturer = "Test"
 version = "1.0.0"
 runtime = "{runtime}"
 primary = {primary}
-
+{extra}
 [[proxy]]
 id = 1
 type = "media_player"
@@ -120,5 +126,71 @@ fn a_sibling_missing_its_payload_is_refused() {
     assert!(
         msg.contains("thing.ir") && msg.contains("commands.toml"),
         "the message must name the driver and the missing file: {msg}"
+    );
+}
+
+/// A variant that names a driver the package does not carry is refused whole.
+///
+/// The failure it prevents is silent: the catalog folds a variant into the product it names, so
+/// pointing at a driver that is not there hides the row behind something that never arrives.
+/// The hardware becomes unreachable and nothing anywhere says why.
+#[test]
+fn a_variant_must_name_a_sibling() {
+    let proxies = ProxyRegistry::bundled().unwrap();
+
+    let lead = manifest("apple.tv", "declarative", true);
+    let ir = manifest_with("apple.tv.ir", "declarative", false, "variant_of = \"apple.tv\"");
+    let good = archive_of(&[
+        ("manifests/tv.toml", lead.as_bytes()),
+        ("manifests/ir.toml", ir.as_bytes()),
+        ("commands.toml", b"[commands]\n"),
+    ]);
+    Package::read(std::io::Cursor::new(good), &proxies).expect("a sibling variant is fine");
+
+    // The same package with the variant pointing somewhere else entirely.
+    let stray = manifest_with(
+        "apple.tv.ir",
+        "declarative",
+        false,
+        "variant_of = \"roku.player\"",
+    );
+    let bad = archive_of(&[
+        ("manifests/tv.toml", lead.as_bytes()),
+        ("manifests/ir.toml", stray.as_bytes()),
+        ("commands.toml", b"[commands]\n"),
+    ]);
+    let err = Package::read(std::io::Cursor::new(bad), &proxies)
+        .expect_err("a variant of something not in the package is refused")
+        .to_string();
+    assert!(err.contains("roku.player"), "{err}");
+}
+
+/// What a product is, and what it is called, both fall back rather than coming out empty.
+#[test]
+fn kind_and_product_fall_back_to_the_driver() {
+    use driver_sdk::manifest::Manifest;
+
+    // Nothing declared: the proxy it leads with, and its own name.
+    let plain = Manifest::parse(&manifest("vizio.tv", "wasm", true)).unwrap();
+    assert_eq!(plain.kind(), Some("media_player"));
+    assert_eq!(plain.product(), "Test vizio.tv");
+
+    // A hub says both, because neither can be read off a bridge.
+    let hub = Manifest::parse(&manifest_with(
+        "signify.hue.bridge",
+        "wasm",
+        true,
+        "product = \"Philips Hue\"\nkind = \"light\"",
+    ))
+    .unwrap();
+    assert_eq!(hub.kind(), Some("light"));
+    assert_eq!(hub.product(), "Philips Hue");
+
+    // And a kind that is not a proxy is a build error, not a group nobody can find.
+    let proxies = ProxyRegistry::bundled().unwrap();
+    let typo = Manifest::parse(&manifest_with("x.y", "wasm", true, "kind = \"lights\"")).unwrap();
+    assert!(
+        typo.validate(&proxies).iter().any(|e| e.contains("lights")),
+        "a typo'd kind must fail the manifest"
     );
 }

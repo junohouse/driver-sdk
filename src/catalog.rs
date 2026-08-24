@@ -42,6 +42,30 @@ pub struct Entry {
     /// back out of id prefixes and getting it wrong.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    /// What a catalog should call the product this driver leads, when that is not its own name
+    /// — straight from [`crate::manifest::DriverMeta::product`].
+    ///
+    /// In the index because a catalog lists products, and half of what it lists is not
+    /// installed. Without it the shelf reads `Philips Hue Bridge` and `TP-Link Account` until
+    /// somebody adds them, and something else afterwards.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product: Option<String>,
+    /// What that product *is*, as a device class — from [`crate::manifest::DriverMeta::kind`],
+    /// falling back to the proxy the driver leads with.
+    ///
+    /// This is what groups the catalog and picks the icon, so it has to be answerable for a
+    /// driver nobody has installed. Inferring it from `proxies` at the far end gets every hub
+    /// wrong: a Hue package leads with a bridge, and a bridge is not what anybody bought.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// The same product as the driver named here, reached another way — from
+    /// [`crate::manifest::DriverMeta::variant_of`].
+    ///
+    /// In the index because the two halves of one product are two rows here, with no package to
+    /// read the relationship out of: `apple.tv` and `apple.tv.ir` are siblings in one archive
+    /// and strangers in a catalog until this says otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant_of: Option<String>,
     /// `junohouse/sony-bravia-ip`. The provenance claim.
     #[serde(default)]
     pub repo: String,

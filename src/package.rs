@@ -22,7 +22,7 @@
 use crate::manifest::{Manifest, Runtime as RuntimeKind};
 use crate::proxy::ProxyRegistry;
 use anyhow::{Context, Result, bail};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -325,6 +325,22 @@ impl Package {
                 );
             }
             manifests.push(m);
+        }
+
+        // A variant names a sibling, so it can only be checked once the whole package is read.
+        // Pointing at a driver that is not here would fold a row into nothing: the catalog
+        // hides the variant behind a product that never arrives, and the hardware becomes
+        // unreachable without anybody being told why.
+        let ids: BTreeSet<&str> = manifests.iter().map(|m| m.driver.id.as_str()).collect();
+        for m in &manifests {
+            if let Some(of) = &m.driver.variant_of
+                && !ids.contains(of.as_str())
+            {
+                bail!(
+                    "{} says variant_of = `{of}`, which is not a driver in this package",
+                    m.driver.id
+                );
+            }
         }
 
         let lead = if has_root { 0 } else { lead_index(&manifests) };
@@ -734,6 +750,16 @@ pub struct Available {
     pub origin: String,
     /// Driver id of the bridge this driver's devices live behind, if any.
     pub parent: Option<String>,
+    /// What a catalog calls the product this driver leads — see [`crate::manifest::DriverMeta::product`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product: Option<String>,
+    /// What the product is, as a device class — see [`crate::manifest::DriverMeta::kind`].
+    /// Resolved: the declared kind, else the proxy this driver leads with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Another way into the same product — see [`crate::manifest::DriverMeta::variant_of`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant_of: Option<String>,
     /// How many devices currently use it.
     pub devices: usize,
     pub readme: Option<String>,
