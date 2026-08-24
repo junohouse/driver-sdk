@@ -719,6 +719,35 @@ impl Manifest {
         self.driver.product.as_deref().unwrap_or(&self.driver.name)
     }
 
+    /// How this driver reaches its hardware, in the words its own manifest uses.
+    ///
+    /// Controls first, then transports, because a driver with a `[[control]]` is reached
+    /// *through* something an installer wired — an emitter, a relay contact — and that is the
+    /// answer somebody needs. A driver with neither is reached by nothing anybody chose: it is
+    /// a child of a bridge, or it is core's own.
+    ///
+    /// What this exists for is telling two variants apart. `apple.tv` is `network` and
+    /// `apple.tv.ir` is `ir_out`: same product, and nothing but somebody standing in the room
+    /// knows which one is true, so they have to be asked. `roku.player` and `roku.tv` are both
+    /// `network` — the difference between them is what the box *is*, not how it is reached, and
+    /// the setup flow reads `is-tv` and settles it without asking anybody anything.
+    pub fn reach(&self) -> Vec<String> {
+        if !self.control.is_empty() {
+            // The proxy name rather than the enum's own spelling: `ir_out`, which is the word
+            // the manifest was written with and the one the contracts use everywhere else.
+            let mut out: Vec<String> = self
+                .control
+                .iter()
+                .map(|c| c.kind.provider_proxy().to_string())
+                .collect();
+            out.dedup();
+            return out;
+        }
+        let mut out: Vec<String> = self.transport.iter().map(|t| t.kind.clone()).collect();
+        out.dedup();
+        out
+    }
+
     pub fn control(&self, id: LocalId) -> Option<&ControlDecl> {
         self.control.iter().find(|c| c.id == id)
     }

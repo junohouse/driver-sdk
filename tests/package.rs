@@ -194,3 +194,34 @@ fn kind_and_product_fall_back_to_the_driver() {
         "a typo'd kind must fail the manifest"
     );
 }
+
+/// What tells two variants apart, and therefore whether anybody has to be asked.
+///
+/// The distinction is the whole reason the Items panel asks about an Apple TV and not about a
+/// Roku. Reached differently — a Companion socket or an IR emitter — and only somebody
+/// standing in the room knows which; reached the same way, and the difference is what the box
+/// *is*, which its own setup flow can read off the device.
+#[test]
+fn reach_is_the_control_then_the_transport() {
+    use driver_sdk::manifest::Manifest;
+
+    let network = Manifest::parse(&format!(
+        "{}\n[[transport]]\nkind = \"network\"\n",
+        manifest("a.net", "wasm", true)
+    ))
+    .unwrap();
+    assert_eq!(network.reach(), vec!["network".to_string()]);
+
+    // A control outranks a transport rather than joining it: what an installer wired is the
+    // answer somebody needs, and a driver that declares both is reached through the wire.
+    let emitter = Manifest::parse(&format!(
+        "{}\n[[transport]]\nkind = \"network\"\n\n[[control]]\nid = 1\nkind = \"ir_out\"\nname = \"IR\"\n",
+        manifest("a.ir", "wasm", true)
+    ))
+    .unwrap();
+    assert_eq!(emitter.reach(), vec!["ir_out".to_string()]);
+
+    // Neither: a child of a bridge, reached through whatever its parent holds.
+    let child = Manifest::parse(&manifest("a.child", "wasm", false)).unwrap();
+    assert!(child.reach().is_empty());
+}

@@ -760,6 +760,10 @@ pub struct Available {
     /// Another way into the same product — see [`crate::manifest::DriverMeta::variant_of`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant_of: Option<String>,
+    /// How it reaches its hardware — see [`crate::manifest::Manifest::reach`]. What tells one
+    /// variant from another, and what decides whether a choice has to be offered at all.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reach: Vec<String>,
     /// How many devices currently use it.
     pub devices: usize,
     pub readme: Option<String>,
