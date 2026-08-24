@@ -139,6 +139,50 @@ pub struct DriverMeta {
     /// listing what is installed — and as a fallback for an app a device did not mention.
     #[serde(default)]
     pub app_platform: Option<String>,
+    /// How much of this driver's own output the controller keeps — and, by being here at all,
+    /// that an installer is allowed to change it.
+    ///
+    /// A driver says plenty about itself: what it sent, what came back, what it made of a
+    /// frame. Most of that is worth nothing in a working house and everything in a broken one,
+    /// so the level it is held to has to be adjustable from the Logs page rather than fixed
+    /// when the driver was built.
+    ///
+    /// Unset means the driver has not thought about it: its output is kept at `info` and the
+    /// control is not offered, because a level control that a driver ignores is worse than no
+    /// control at all. Set it to the level this driver is worth *when nothing is wrong* —
+    /// almost always `info`, and `debug` only for something whose ordinary operation is what
+    /// somebody is trying to see.
+    ///
+    /// This governs the driver's own lines, never the controller's account of it: a device
+    /// that stops answering is core's observation and is reported whatever this says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_level: Option<LogLevel>,
+}
+
+/// What a driver is worth hearing about. Ordinary syslog levels, spelled as the rest of Juno
+/// spells them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LogLevel {
+    Error,
+    Warn,
+    Info,
+    Debug,
+    /// Everything, including what the driver is doing between one command and the next. Never
+    /// a manifest default: this is a level somebody turns on while watching.
+    Trace,
+}
+
+impl LogLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LogLevel::Error => "error",
+            LogLevel::Warn => "warn",
+            LogLevel::Info => "info",
+            LogLevel::Debug => "debug",
+            LogLevel::Trace => "trace",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -308,16 +352,32 @@ impl Serialize for ActionOn {
 
 /// One argument of an [`ActionDecl`].
 ///
-/// Deliberately the same small vocabulary as `[[property]]`, so a driver author learns one
-/// thing and a form renderer has one thing to render.
+/// Nearly the same small vocabulary as `[[property]]`, so a driver author learns one thing and
+/// a form renderer has one thing to render — and the exception is worth knowing. A property is
+/// named by its `name`, which *is* the label, and explained by `tooltip`. An argument has a
+/// separate `label`, because `name` is the key the driver receives and is not always something
+/// to show somebody.
+///
+/// The two used to differ in a way that was simply a gap: an argument had nowhere to put the
+/// sentence explaining it. A Zigbee adapter's `via` ended up with
+/// `label = "Through — address of one router, or blank for the whole mesh"`, which is a tooltip
+/// wearing a label's clothes and sixty characters wide in a row of controls.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArgDecl {
     pub name: String,
     #[serde(rename = "type")]
     pub ty: String,
+    /// What to call it on screen. `name` is the key the driver is handed; this is for people.
     #[serde(default)]
     pub label: String,
+    /// The sentence explaining it, shown on hover — the same job `PropertyDecl::tooltip` does.
+    ///
+    /// Keep it out of `label`. A label sits inline in a row of controls next to the button that
+    /// runs the action, so a long one pushes everything else off the end; this has a tooltip to
+    /// live in and no width to respect.
+    #[serde(default)]
+    pub tooltip: String,
     #[serde(default)]
     pub required: bool,
     pub default: Option<Value>,
@@ -342,8 +402,23 @@ pub struct ControlDecl {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TransportDecl {
+    /// What this connection is, for whoever reads the manifest. Core dispatches on none of it:
+    /// the socket is `port` plus `tls`, and a driver that wants MQTT says so by sending
+    /// `HostCall::Publish`. Kept because a bare `[[transport]]` block says nothing at all.
     pub kind: String,
+    /// The port core dials, for the drivers whose socket core owns — the ones that send
+    /// `HostCall::Tx` or `HostCall::Publish`.
+    ///
+    /// Leave it unset for a driver that builds its own URLs through `HostCall::Http`: nothing
+    /// reads it there, and a second copy of the port beside the one in the code is a copy that
+    /// will disagree. Also unset when the port is announced rather than fixed — a Companion
+    /// link and a HAP accessory pick one at boot and put it in their SRV record, which arrives
+    /// as the device's own `Port` property and wins over this anyway.
     pub port: Option<u16>,
+    /// Accepted and ignored. It named the mechanism that finds this hardware, which is what the
+    /// `[discovery]` table does and has always been read from instead — nothing has ever
+    /// dispatched on this. Kept only because `deny_unknown_fields` means removing it would stop
+    /// every already-published package that writes one from installing; do not write new ones.
     #[serde(default)]
     pub discovery: String,
     #[serde(default)]

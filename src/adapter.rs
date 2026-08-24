@@ -95,6 +95,28 @@ pub enum Up {
         #[serde(default)]
         detail: String,
     },
+    /// Everything about one coordinator that core has no schema for, for the driver's own
+    /// screen to render.
+    ///
+    /// [`Up::Status`] answers "is the radio there" in a word, because that is the part core acts
+    /// on. A protocol stack knows far more than core has any business modelling — a Zigbee
+    /// mesh's neighbour tables, link quality, which router a sleepy device parented to, how far
+    /// through its interview a device that joined a minute ago is. None of that fits a proxy
+    /// contract, and inventing core-side types for it would put a controller release between a
+    /// radio and its own diagnostics.
+    ///
+    /// So it is opaque, exactly as [`Up::Config`] is, and for the same reason: storing something
+    /// one cannot interpret is the point. Core caches the last one per coordinator and serves it
+    /// back verbatim to the page the driver ships in `ui/index.html` — the two halves of a
+    /// driver-owned screen, one publishing and one drawing, with nothing in between that has to
+    /// learn what a neighbour table is.
+    ///
+    /// Held in memory only. It is a live view of a radio rather than a fact about the house, it
+    /// is worthless after a restart, and the adapter republishes it on the next `Open` anyway.
+    Detail {
+        coord: u32,
+        data: Value,
+    },
     /// Something worth showing an integrator. Kept separate from stderr so an adapter can be
     /// deliberate about what surfaces in the UI versus what is only in the log.
     Log {
