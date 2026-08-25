@@ -9,8 +9,11 @@ supports_color        = { type = "bool", default = false, doc = "Full hue/satura
 supports_cct          = { type = "bool", default = false, doc = "Tunable correlated color temperature" }
 cct_min               = { type = "u32",  default = 2700 }
 cct_max               = { type = "u32",  default = 6500 }
+# Gates the `ramp_ms` on every command here, and the hold-to-dim pair. A driver that leaves it
+# false is saying the hardware fades on its own schedule, so nothing offers a fade time it
+# cannot carry.
 supports_ramp         = { type = "bool", default = false, doc = "Honours a ramp time on level changes" }
-ramp_rate_max_ms      = { type = "u32",  default = 0 }
+ramp_rate_max_ms      = { type = "u32",  default = 0,     doc = "Longest fade the hardware accepts" }
 supports_target       = { type = "bool", default = false, doc = "Can be told to ramp toward a level over time and report progress" }
 min_on_level          = { type = "u8",   default = 1,   doc = "Lowest level the load will hold without flicker" }
 max_on_level          = { type = "u8",   default = 100 }
@@ -29,30 +32,33 @@ title = "Set brightness"
 doc = "Set brightness. 0 is off."
 requires = "dimmer"
 params.level   = { type = "u8",  min = 0, max = 100 }
-params.ramp_ms = { type = "u32", optional = true }
+params.ramp_ms = { type = "u32", optional = true, requires = "supports_ramp", doc = "Fade time" }
 
+# Gated on `supports_ramp` rather than on `dimmer`: plenty of switches dim in one jump and
+# have no "go up until I say stop" — a Tapo dimmer answers both of these with a warning, and
+# a pair of buttons that can only fail is worse than no buttons at all.
 [commands.ramp_start]
 title = "Start dimming"
 doc = "Begin ramping in a direction until stopped — for held keypad buttons"
-requires = "dimmer"
+requires = "supports_ramp"
 params.direction = { type = "string", values = ["up", "down"] }
 
 [commands.ramp_stop]
 title = "Stop dimming"
-requires = "dimmer"
+requires = "supports_ramp"
 
 [commands.set_color]
 title = "Set color"
 requires = "supports_color"
 params.hue     = { type = "f32", min = 0.0, max = 360.0 }
 params.sat     = { type = "f32", min = 0.0, max = 100.0 }
-params.ramp_ms = { type = "u32", optional = true }
+params.ramp_ms = { type = "u32", optional = true, requires = "supports_ramp", doc = "Fade time" }
 
 [commands.set_cct]
 title = "Set color temperature"
 requires = "supports_cct"
 params.kelvin  = { type = "u32", min = 1000, max = 10000, min_cap = "cct_min", max_cap = "cct_max" }
-params.ramp_ms = { type = "u32", optional = true }
+params.ramp_ms = { type = "u32", optional = true, requires = "supports_ramp", doc = "Fade time" }
 
 [notifications.level_changed]
 title = "Brightness changed"

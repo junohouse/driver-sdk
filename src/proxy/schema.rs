@@ -69,6 +69,17 @@ pub struct Param {
     pub ty: ValueType,
     #[serde(default)]
     pub optional: bool,
+    /// Name of a `bool` capability, for a parameter a device either honours or does not.
+    ///
+    /// The gate [`Signature::requires`] puts on a whole command, one level down. `set_level`
+    /// belongs to every dimmer, but the `ramp_ms` on it means nothing to a switch whose fade
+    /// time lives in its own settings — and a Tapo dimmer offered a fade box that was quietly
+    /// dropped on the way to the hardware. Absent means every device of this class takes it.
+    ///
+    /// Only ever on an `optional` parameter: gating a required one would leave a command
+    /// nobody could call. [`Proxy::validate`] refuses that.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<String>,
     pub min: Option<f64>,
     pub max: Option<f64>,
     /// Allowed values. Only meaningful for `string`.
@@ -109,6 +120,14 @@ pub struct Param {
 }
 
 impl Param {
+    /// Whether this device takes this parameter at all. See [`Param::requires`].
+    pub fn enabled(&self, caps: &BTreeMap<String, Value>) -> bool {
+        match &self.requires {
+            None => true,
+            Some(req) => caps.get(req).and_then(Value::as_bool) == Some(true),
+        }
+    }
+
     /// The effective range for one device: contract bounds, narrowed by its capabilities.
     pub fn range(&self, caps: &BTreeMap<String, Value>) -> (Option<f64>, Option<f64>) {
         let from_cap = |name: &Option<String>| {
@@ -317,6 +336,20 @@ impl Proxy {
                     }
                     if !p.values.is_empty() && p.ty != ValueType::String {
                         errs.push(format!("{where_}: `values` is only valid on a string"));
+                    }
+                    if let Some(req) = &p.requires {
+                        match self.capabilities.get(req) {
+                            None => errs
+                                .push(format!("{where_}: requires unknown capability `{req}`")),
+                            Some(c) if c.ty != ValueType::Bool => errs.push(format!(
+                                "{where_}: requires `{req}`, which is {:?}, not bool",
+                                c.ty
+                            )),
+                            Some(_) if !p.optional => errs.push(format!(
+                                "{where_}: `requires` on a parameter that is not optional"
+                            )),
+                            Some(_) => {}
+                        }
                     }
                     // A gate on a value that is not offered, or on a capability that does not
                     // exist, silently never fires — so the parameter looks narrowed and is not.

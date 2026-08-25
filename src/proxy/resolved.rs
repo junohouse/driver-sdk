@@ -226,6 +226,9 @@ fn check_params(
 ) -> Result<(), CallError> {
     for (name, spec) in &sig.params {
         match args.get(name) {
+            // A parameter this device does not take is not a parameter: refused here rather
+            // than passed down to a driver that would drop it and report success.
+            Some(_) if !spec.enabled(caps) => return Err(CallError::UnknownParam(name.clone())),
             None if spec.optional => continue,
             None => return Err(CallError::MissingParam(name.clone())),
             Some(v) => check_param(name, spec, v, caps)?,

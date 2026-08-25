@@ -56,6 +56,11 @@ fn param_cell(p: &Param) -> String {
     if p.optional {
         s.push_str(" *(optional)*");
     }
+    // The same note a gated command carries, one level down: a driver reading this has to know
+    // that sending `ramp_ms` without declaring `supports_ramp` is refused, not ignored.
+    if let Some(req) = &p.requires {
+        s.push_str(&format!(" *(needs `{req}`)*"));
+    }
     s
 }
 
