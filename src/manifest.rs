@@ -165,6 +165,19 @@ pub struct DriverMeta {
     /// alphabetical order, which is stable but says nothing.
     #[serde(default)]
     pub primary: bool,
+    /// Whether this is core's own plumbing rather than something somebody adds.
+    ///
+    /// A catalog that lists a light group beside Philips Hue is describing two kinds of thing in
+    /// one list, so the browser keeps them apart — and it worked out which was which from
+    /// `runtime = "builtin"`, which is a fact about *how a driver ships* and not about what it
+    /// is. That held while every built-in was infrastructure. `juno.input` is the exception it
+    /// was always going to meet: a games console on an HDMI lead is the most-added device in a
+    /// real house and ships inside core because it has no protocol to package.
+    ///
+    /// Absent means "decide from the runtime", which is what every driver written before this
+    /// gets and what every packaged driver wants. Set it only where the two disagree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub internal: Option<bool>,
     /// What the whole package is called, when that is not the lead driver's own name.
     ///
     /// A catalog lists *products*, and a product's name is not always a driver's. The Hue

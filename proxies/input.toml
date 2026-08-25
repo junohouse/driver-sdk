@@ -1,0 +1,41 @@
+name = "input"
+title = "Input"
+category = "av"
+description = """
+Something plugged into the house that Juno cannot talk to: a games console, a Blu-ray player, a
+laptop on the end of an HDMI lead, a camera feed.
+
+It is a **source with no control path**, and that is the whole of it. There is nothing to send it
+and nothing to ask it — so this contract has no commands, deliberately. A room can be switched
+*to* one of these, because switching is the television's job and the pathfinder's, and neither
+needs the source to cooperate.
+
+The alternative was `media_player` with its capabilities turned off, and it is the wrong shape:
+`play`, `pause` and `stop` are ungated there, so every console in the house would have offered a
+Play button that does nothing. A control that lies about what it reaches is worse than no
+control — see `has_deep_link` on `media_player` for the same argument about a different button.
+
+What it *does* carry is `kind`: what is actually on the end of the cable. A screen draws a games
+console differently from a Blu-ray player, and nobody wants to read the word "Input" on a tile.
+It is a free string rather than an enumeration because the point of this contract is the long
+tail — the driver that declares it offers a list, and a house with something nobody thought of
+types it in.
+"""
+
+[capabilities]
+is_video_source = { type = "bool", default = true,  doc = "The picture can start here." }
+is_audio_source = { type = "bool", default = true,  doc = "The sound can start here." }
+
+[notifications.kind_changed]
+doc = "What is plugged in changed — somebody swapped the console for a laptop."
+params.kind = { type = "string" }
+
+[notifications.online_changed]
+params.online = { type = "bool" }
+
+[state]
+# No `online` default of true: nothing here can be asked whether it is there, and a source that
+# claimed to be reachable would be claiming something nobody checked. A driver that does know —
+# a switcher reporting which of its inputs has a signal — says so.
+kind   = { type = "string", doc = "What is on the end of the cable: `console`, `disc`, `computer`." }
+online = { type = "bool" }

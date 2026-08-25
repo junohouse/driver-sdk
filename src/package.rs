@@ -832,6 +832,10 @@ pub struct Available {
     pub proxies: Vec<String>,
     /// `built-in`, `package`, or `sideloaded`.
     pub origin: String,
+    /// Whether this is core's own plumbing rather than something somebody adds — see
+    /// [`crate::manifest::DriverMeta::internal`]. Absent means decide from `runtime`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub internal: Option<bool>,
     /// Driver id of the bridge this driver's devices live behind, if any.
     pub parent: Option<String>,
     /// What a catalog calls the product this driver leads — see [`crate::manifest::DriverMeta::product`].
