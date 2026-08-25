@@ -234,7 +234,12 @@ fn a_connection_is_checked_against_its_own_kind() {
         manifest("a.two", "wasm", true)
     ))
     .unwrap();
-    assert!(twice.validate(&proxies).iter().any(|e| e.contains("two `Tcp`")));
+    assert!(
+        twice
+            .validate(&proxies)
+            .iter()
+            .any(|e| e.contains("two `Tcp`"))
+    );
 
     // Two different kinds is the whole point of the table.
     let both = Manifest::parse(&format!(
@@ -242,7 +247,11 @@ fn a_connection_is_checked_against_its_own_kind() {
         manifest("a.panel", "wasm", true)
     ))
     .unwrap();
-    assert!(both.validate(&proxies).is_empty(), "{:?}", both.validate(&proxies));
+    assert!(
+        both.validate(&proxies).is_empty(),
+        "{:?}",
+        both.validate(&proxies)
+    );
 }
 
 /// A mesh node is matched on what its descriptor says, and a node that grew a cluster in a
@@ -251,13 +260,29 @@ fn a_connection_is_checked_against_its_own_kind() {
 #[test]
 fn a_zigbee_fingerprint_matches_a_superset() {
     use driver_sdk::manifest::ZigbeeMatch;
-    let rule = ZigbeeMatch { profile: 49297, endpoint: 1, in_clusters: vec![2, 3, 11, 13] };
+    let rule = ZigbeeMatch {
+        profile: 49297,
+        endpoint: 1,
+        in_clusters: vec![2, 3, 11, 13],
+    };
 
     assert!(rule.matches(49297, 1, &[2, 3, 11, 13]));
-    assert!(rule.matches(49297, 1, &[2, 3, 11, 13, 25]), "a superset still matches");
-    assert!(!rule.matches(49297, 1, &[2, 3, 11]), "a missing cluster does not");
-    assert!(!rule.matches(260, 1, &[2, 3, 11, 13]), "nor another profile");
-    assert!(!rule.matches(49297, 2, &[2, 3, 11, 13]), "nor another endpoint");
+    assert!(
+        rule.matches(49297, 1, &[2, 3, 11, 13, 25]),
+        "a superset still matches"
+    );
+    assert!(
+        !rule.matches(49297, 1, &[2, 3, 11]),
+        "a missing cluster does not"
+    );
+    assert!(
+        !rule.matches(260, 1, &[2, 3, 11, 13]),
+        "nor another profile"
+    );
+    assert!(
+        !rule.matches(49297, 2, &[2, 3, 11, 13]),
+        "nor another endpoint"
+    );
 }
 
 /// The word a kind is written with, and the one every reader matches on.
@@ -306,13 +331,29 @@ fn a_combo_port_may_only_be_what_it_declared() {
          [[proxy]]\nid = 2\ntype = \"relay\"\nname = \"Relay 1\"\n",
     )
     .unwrap();
-    assert!(m.validate(&proxies).is_empty(), "{:?}", m.validate(&proxies));
+    assert!(
+        m.validate(&proxies).is_empty(),
+        "{:?}",
+        m.validate(&proxies)
+    );
 
     assert!(m.binding_may_be(1, "ir_out"), "what it already is");
-    assert!(m.binding_may_be(1, "serial_port"), "and what else it can be");
-    assert!(!m.binding_may_be(1, "relay"), "but not a contract it never offered");
-    assert!(!m.binding_may_be(2, "ir_out"), "a plain port has no alternates");
-    assert!(!m.binding_may_be(9, "ir_out"), "nor does a proxy that does not exist");
+    assert!(
+        m.binding_may_be(1, "serial_port"),
+        "and what else it can be"
+    );
+    assert!(
+        !m.binding_may_be(1, "relay"),
+        "but not a contract it never offered"
+    );
+    assert!(
+        !m.binding_may_be(2, "ir_out"),
+        "a plain port has no alternates"
+    );
+    assert!(
+        !m.binding_may_be(9, "ir_out"),
+        "nor does a proxy that does not exist"
+    );
 
     // A typo'd alternate is a port that can never be switched, discovered by somebody trying.
     let typo = Manifest::parse(
@@ -320,7 +361,11 @@ fn a_combo_port_may_only_be_what_it_declared() {
          [[proxy]]\nid = 1\ntype = \"ir_out\"\nalternates = [\"serial\"]\n",
     )
     .unwrap();
-    assert!(typo.validate(&proxies).iter().any(|e| e.contains("`serial` is not a proxy")));
+    assert!(
+        typo.validate(&proxies)
+            .iter()
+            .any(|e| e.contains("`serial` is not a proxy"))
+    );
 
     // And naming what it already is says nothing, so it is a mistake rather than a no-op.
     let same = Manifest::parse(
@@ -328,7 +373,11 @@ fn a_combo_port_may_only_be_what_it_declared() {
          [[proxy]]\nid = 1\ntype = \"ir_out\"\nalternates = [\"ir_out\"]\n",
     )
     .unwrap();
-    assert!(same.validate(&proxies).iter().any(|e| e.contains("already what it is")));
+    assert!(
+        same.validate(&proxies)
+            .iter()
+            .any(|e| e.contains("already what it is"))
+    );
 }
 
 /// A driver's screen can be a project, as long as what ships is one file.

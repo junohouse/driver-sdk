@@ -690,7 +690,10 @@ impl Package {
         // carry several. Copied under the same rule as everything else here: only when a
         // manifest asks for it, so a stray `zigbee/` directory beside a wasm driver does not
         // travel as though it meant something.
-        for m in manifests.iter().filter(|m| m.driver.runtime == RuntimeKind::Zigbee) {
+        for m in manifests
+            .iter()
+            .filter(|m| m.driver.runtime == RuntimeKind::Zigbee)
+        {
             let name = format!("zigbee/{}.json", m.driver.id);
             let p = dir.join(&name);
             if !p.exists() {

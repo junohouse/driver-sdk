@@ -117,6 +117,23 @@ is what somebody unplugs the thing over in a bedroom.
 """
 params.level = { type = "u32", min = 0, max_cap = "indicator_max" }
 
+[commands.alarm]
+title = "Play alarm"
+doc = """
+Play one of Juno's offline alarm sounds through this endpoint's current room voice route. `task`
+makes delivery idempotent: Core retries a ringing alarm after a dropped request or restart, and the
+switch must continue the existing playback rather than stack another copy.
+"""
+params.task = { type = "u32" }
+params.sound = { type = "string", values = ["classic", "bell", "digital", "gentle", "ascending"] }
+params.volume = { type = "u32", min = 0, max = 100 }
+params.duration_seconds = { type = "u32", min = 1, max = 600 }
+
+[commands.dismiss_alarm]
+title = "Dismiss alarm"
+doc = "Stop alarm playback for the named task without stopping unrelated room media."
+params.task = { type = "u32" }
+
 [commands.listen]
 title = "Listen in"
 requires = "has_monitor"
