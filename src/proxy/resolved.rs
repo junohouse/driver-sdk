@@ -19,6 +19,11 @@ pub struct Resolved {
     /// Commands this device actually supports, in contract order.
     pub commands: Vec<String>,
     pub notifications: Vec<String>,
+    /// State keys this device actually has, narrowed the same way. `#[serde(default)]` because
+    /// a project written before this existed has none recorded, and an empty list there must
+    /// read as "not narrowed yet" rather than "this device reports nothing".
+    #[serde(default)]
+    pub state: Vec<String>,
 }
 
 impl Resolved {
@@ -28,6 +33,14 @@ impl Resolved {
 
     pub fn emits(&self, notification: &str) -> bool {
         self.notifications.iter().any(|n| n == notification)
+    }
+
+    /// Whether this device reports a value under this key.
+    ///
+    /// An empty `state` means the contract was resolved before state was narrowed — say so by
+    /// answering yes, which is what every caller assumed before this existed.
+    pub fn reports(&self, key: &str) -> bool {
+        self.state.is_empty() || self.state.iter().any(|k| k == key)
     }
 
     /// Capability value, or `Value::Null` if the proxy has no such capability.
@@ -141,11 +154,23 @@ impl Proxy {
             .map(|(k, _)| k.clone())
             .collect();
 
+        // The same gate, over the values a device reports. See `StateField::requires`.
+        let state = self
+            .state
+            .iter()
+            .filter(|(_, f)| match &f.requires {
+                None => true,
+                Some(req) => caps.get(req).and_then(Value::as_bool).unwrap_or(false),
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+
         Ok(Resolved {
             proxy_type: self.name.clone(),
             caps,
             commands,
             notifications,
+            state,
         })
     }
 

@@ -169,6 +169,22 @@ pub struct StateField {
     pub title: Option<String>,
     #[serde(default)]
     pub doc: String,
+    /// The capability this value depends on, when it depends on one. Absent means every device
+    /// of this class has it.
+    ///
+    /// The same gate `Signature::requires` puts on a command or a notification, for the same
+    /// reason and read the same way — a contract describes a *class*, and half of what a class
+    /// can do is not true of any one device in it. A `media_player` carries `mute` because many
+    /// of them can be muted; a VIZIO's SmartCast launcher cannot, declares no `has_mute`, and
+    /// was still offered "Muted" as something to write a rule against. The set beside it in the
+    /// same device can be muted, so a house had two identical `Muted` sources and only one of
+    /// them was real.
+    ///
+    /// Gated here rather than inferred from which notifications survive: a value set straight
+    /// by [`crate::HostCall::SetState`] has no notification feeding it — a thermostat setpoint
+    /// is the case — and inference would quietly drop those.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<String>,
     /// Notification parameter that feeds this state key, when the two are not named the same.
     /// `temperature_c` is fed by `temperature_changed{celsius}`, so it says `from = "celsius"`.
     ///

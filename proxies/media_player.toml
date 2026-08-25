@@ -242,7 +242,11 @@ params.online = { type = "bool" }
 [state]
 transport = { type = "string", from = "state" }
 volume    = { title = "Volume", type = "u32", from = "level" }
-mute      = { title = "Muted", type = "bool" }
+# Gated, because plenty of sources cannot be muted and the ones that cannot were still offering
+# "Muted" as something to write a rule against. A VIZIO is one device with a `media_player` and a
+# `tv` on it; both carried this, only the set is real, and a house had two identical `Muted`
+# sources with nothing to tell them apart. See `StateField::requires`.
+mute      = { title = "Muted", type = "bool", requires = "has_mute" }
 app       = { type = "string", doc = "Application currently in the foreground" }
 apps      = { type = "string_list", doc = "Installed applications, as read from the device" }
 app_icons = { type = "string_list", doc = "Artwork for `apps`, one per entry, same order" }

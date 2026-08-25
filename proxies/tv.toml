@@ -88,5 +88,8 @@ params.online = { type = "bool" }
 on         = { type = "bool" }
 connection = { type = "u32" }
 volume     = { type = "u32", from = "level" }
-mute       = { type = "bool" }
+# `has_volume` rather than `has_discrete_mute`: a set with only a mute *toggle* still has a mute
+# state, and `mute_toggle` is what that capability gates. Defaults true, so an ordinary
+# television keeps it — the screen is the half of a smart TV that really can be muted.
+mute       = { type = "bool", requires = "has_volume" }
 online     = { type = "bool" }
