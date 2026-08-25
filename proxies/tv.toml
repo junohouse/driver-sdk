@@ -84,9 +84,32 @@ params.mute = { type = "bool" }
 [notifications.online_changed]
 params.online = { type = "bool" }
 
+[notifications.source_changed]
+doc = """
+The set moved to one of its own sources, or off one. `source` is empty when it is on a jack.
+
+Separate from `input_changed` because these are not connections and must never be treated as
+some: nothing is wired to AirPlay, nothing can be routed through it, and a pathfinder handed one
+as a jack would solve a path to a socket that does not exist.
+"""
+params.source = { type = "string" }
+
 [state]
 on         = { type = "bool" }
 connection = { type = "u32" }
+# The set's own sources — AirPlay, a built-in free-TV app — and which one it is on.
+#
+# Not connections, and kept out of `connection` for that reason: a jack is something an
+# installer wires a box into and the pathfinder solves through, and none of these is. What they
+# are is real, visible on the set's own input list, and worth showing beside the jacks on a
+# control surface — a television sitting on AirPlay should say so rather than looking like it is
+# on nothing.
+#
+# A house cannot select one. There is no command here to do it and that is deliberate: a phone
+# puts a television on AirPlay, and offering a button for it would be a control that reaches
+# nothing. See `input.toml` for the same argument about a whole contract.
+built_in_sources = { type = "string_list", doc = "The set's own sources, by the names it shows." }
+source           = { type = "string", from = "source", doc = "Which of them it is on. Empty on a jack." }
 volume     = { type = "u32", from = "level" }
 # `has_volume` rather than `has_discrete_mute`: a set with only a mute *toggle* still has a mute
 # state, and `mute_toggle` is what that capability gates. Defaults true, so an ordinary
