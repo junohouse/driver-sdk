@@ -648,6 +648,19 @@ pub struct PropertyDecl {
     /// that panics the day somebody edits the project file by hand.
     #[serde(default)]
     pub required: bool,
+    /// Only meaningful on one of the driver's connections.
+    ///
+    /// A driver reached two ways often wants different answers for each: a panel over its
+    /// security protocol needs a token off a settings page, and the same panel over its
+    /// automation protocol needs a certificate exchange it does itself. Shown together, an
+    /// installer gets five fields of which two are dead, and no way to tell which — which is
+    /// the same bug as a slider that does nothing.
+    ///
+    /// Unset means it applies whatever the device is reached over, which is true of an address
+    /// and of nearly everything else. Ignored by a driver with one connection, where there is
+    /// nothing to be irrelevant to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connection: Option<LocalId>,
 }
 
 /// The signature of a device on a Zigbee mesh: what its descriptor says about itself.
@@ -863,6 +876,22 @@ impl Manifest {
         })
     }
 
+    /// The properties that apply to a device reached over `connection`.
+    ///
+    /// Everything untagged, plus what this connection claims. A device that has not said which
+    /// way in it uses gets all of them — which is the honest answer while nobody knows, and is
+    /// every device of every single-connection driver.
+    pub fn properties_for(&self, connection: Option<LocalId>) -> Vec<&PropertyDecl> {
+        self.property
+            .iter()
+            .filter(|p| match (p.connection, connection) {
+                (None, _) => true,
+                (Some(_), None) => true,
+                (Some(mine), Some(theirs)) => mine == theirs,
+            })
+            .collect()
+    }
+
     /// What a catalog calls this package — declared [`DriverMeta::product`], else its own name.
     pub fn product(&self) -> &str {
         self.driver.product.as_deref().unwrap_or(&self.driver.name)
@@ -1048,6 +1077,16 @@ impl Manifest {
                         ));
                     }
                 }
+            }
+        }
+        for p in &self.property {
+            if let Some(c) = p.connection
+                && !self.control.iter().any(|decl| decl.id == c)
+            {
+                errs.push(format!(
+                    "property `{}` belongs to connection {c}, which this driver does not declare",
+                    p.name
+                ));
             }
         }
         // Two connections of the same kind are two of the same thing, and nothing downstream
