@@ -755,13 +755,52 @@ impl Package {
             }
         }
 
-        // The driver's own settings screen, if it has one. One self-contained page: the
-        // configurator renders it in a frame from the text, so a second file it tried to
-        // fetch would not be there to fetch.
-        let ui = dir.join("ui").join("index.html");
-        if ui.exists() {
+        // The driver's own settings screen, if it has one.
+        //
+        // One self-contained page, always: the configurator renders it in a frame from the text
+        // it was handed, so there is no URL for a second file to be relative to and nothing to
+        // fetch it from. That is a constraint on the *artifact*, not on how it was written — a
+        // page of any size can be a React app in a dozen files, built and inlined into one, and
+        // for anything past a handful of controls it should be.
+        //
+        // So `ui/dist/index.html` wins over `ui/index.html`: a driver with a build puts its
+        // output there — `vite build` with a single-file plugin, or any bundler that inlines its
+        // JS and CSS — and a driver without one keeps writing the page by hand. Preferring the
+        // built copy is what makes `npm --prefix ui run build && junodrv pack .` the whole
+        // release step.
+        let built = dir.join("ui").join("dist").join("index.html");
+        let written = dir.join("ui").join("index.html");
+        let ui = if built.exists() { Some(built) } else if written.exists() { Some(written) } else { None };
+
+        // A driver that has a UI project and no build of it is a mistake worth failing on. The
+        // package would install and its pane would be empty, and the reason — somebody forgot a
+        // build step — is invisible from a house.
+        if ui.is_none() && dir.join("ui").join("package.json").is_file() {
+            bail!(
+                "{}/ui has a package.json but no dist/index.html — build it before packing",
+                dir.display()
+            );
+        }
+
+        if let Some(ui) = ui {
+            let page = std::fs::read(&ui)?;
+            // The frame is `srcdoc`, so a `<script src>` or a `<link rel=stylesheet>` pointing at
+            // a sibling file resolves against the configurator and 404s — silently, because a
+            // page that loaded and did nothing looks like a page with nothing to do. Caught here,
+            // where the bundler that was supposed to inline them can still be fixed.
+            let text = String::from_utf8_lossy(&page);
+            for tag in ["<script src=", "<script type=\"module\" src=", "<link rel=\"stylesheet\" href="] {
+                if text.contains(tag) {
+                    bail!(
+                        "{} loads a file beside itself ({tag}…) — the configurator renders it \
+                         from text and there is nothing beside it. Inline it: `vite build` with \
+                         a single-file plugin, or equivalent.",
+                        ui.display()
+                    );
+                }
+            }
             zip.start_file("ui/index.html", opts)?;
-            zip.write_all(&std::fs::read(ui)?)?;
+            zip.write_all(&page)?;
         }
 
         zip.finish()?;

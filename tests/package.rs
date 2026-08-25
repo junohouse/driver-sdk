@@ -330,3 +330,54 @@ fn a_combo_port_may_only_be_what_it_declared() {
     .unwrap();
     assert!(same.validate(&proxies).iter().any(|e| e.contains("already what it is")));
 }
+
+/// A driver's screen can be a project, as long as what ships is one file.
+///
+/// The frame is `srcdoc`: the configurator hands it text, so there is no URL for a relative
+/// `<script src>` to resolve against and nothing beside the page to fetch. That is a constraint
+/// on the artifact and not on how it was written — a React app in a dozen files, built and
+/// inlined, is the same one file. So the built copy wins, and a page that still loads a sibling
+/// is refused here, where the bundler that should have inlined it can still be fixed. Left to a
+/// house it is a pane that loads and does nothing, which looks like a pane with nothing to do.
+#[test]
+fn a_built_page_wins_and_a_page_needing_siblings_is_refused() {
+    let dir = std::env::temp_dir().join(format!("juno-ui-pack-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("ui").join("dist")).unwrap();
+    std::fs::write(dir.join("manifest.toml"), manifest("test.ui", "declarative", true)).unwrap();
+    std::fs::write(dir.join("commands.toml"), "command.on = { tx = \"ON\\r\" }").unwrap();
+
+    // Written by hand and built: the build is what ships.
+    std::fs::write(dir.join("ui").join("index.html"), "<p>by hand</p>").unwrap();
+    std::fs::write(dir.join("ui").join("dist").join("index.html"), "<p>built</p>").unwrap();
+    let out = dir.join("out");
+    let built = Package::build(&dir, &out).expect("packs");
+    assert_eq!(page_in(&built), "<p>built</p>");
+
+    // Only written by hand: still fine. Most drivers will never have a build.
+    std::fs::remove_file(dir.join("ui").join("dist").join("index.html")).unwrap();
+    let built = Package::build(&dir, &out).expect("packs");
+    assert_eq!(page_in(&built), "<p>by hand</p>");
+
+    // A bundler that did not inline. This is the failure worth catching: it installs, and the
+    // pane is blank.
+    std::fs::write(dir.join("ui").join("index.html"),
+                   "<div id=root></div><script src=\"/assets/main.js\"></script>").unwrap();
+    let err = Package::build(&dir, &out).expect_err("refused");
+    assert!(format!("{err}").contains("loads a file beside itself"), "{err}");
+
+    // And a UI project with nothing built is somebody who forgot the build step.
+    std::fs::remove_file(dir.join("ui").join("index.html")).unwrap();
+    std::fs::write(dir.join("ui").join("package.json"), "{\"name\":\"ui\"}").unwrap();
+    let err = Package::build(&dir, &out).expect_err("refused");
+    assert!(format!("{err}").contains("build it before packing"), "{err}");
+}
+
+/// The page inside a built `.junodrv`.
+fn page_in(archive: &std::path::Path) -> String {
+    let file = std::fs::File::open(archive).unwrap();
+    let mut zip = zip::ZipArchive::new(file).unwrap();
+    let mut page = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("ui/index.html").unwrap(), &mut page).unwrap();
+    page
+}
