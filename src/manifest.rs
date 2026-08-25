@@ -387,6 +387,20 @@ pub struct AdapterDecl {
     /// A container this adapter cannot work without. See [`DockerDecl`].
     #[serde(default)]
     pub docker: Option<DockerDecl>,
+    /// The adapter's own web interface, which the controller proxies into the driver's screen.
+    ///
+    /// Some adapters front software that already has a good screen of its own — Music Assistant's
+    /// providers, its library, its scan of a folder. Re-drawing that in the configurator would
+    /// mean re-drawing somebody else's application badly and again after each of their releases,
+    /// and pointing an iframe straight at it only works from a browser that can reach the service
+    /// directly. The controller can, so the controller carries it.
+    ///
+    /// The value is the **name of a property** holding the port, not a port. A service whose port
+    /// somebody moved is then a property edit rather than a new build, and the one place the port
+    /// is written stays the one place. The host is the device's `Address`, or this controller when
+    /// that is blank — the same rule the adapter itself follows to find the thing it talks to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_port: Option<String>,
 }
 
 /// A container the controller runs for an adapter.
