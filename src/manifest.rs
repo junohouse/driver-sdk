@@ -480,6 +480,34 @@ pub struct ActionDecl {
     pub needs_one_of: Vec<String>,
 }
 
+/// A screen the driver ships, and where the configurator should offer it.
+///
+/// A driver's own page arrives as one self-contained file — see `ui/index.html` — and a driver
+/// with more than one thing to show used to draw its own tab strip inside it. Rendered where it
+/// actually appears, that is two rows of tabs an inch apart with nothing saying which owns what:
+/// the configurator's device pane already has a strip across the top, and the frame sits under
+/// it.
+///
+/// So the driver declares its panes here and the configurator puts them in the strip it already
+/// has. Declared rather than announced by the page at load, because the strip has to be right
+/// before a four-hundred-kilobyte page has been fetched — tabs that appear a moment after the
+/// pane opens are tabs somebody has already clicked past.
+///
+/// `on` is the same scoping actions use, and it is the whole reason this is a list: a Zigbee
+/// adapter and its radios are one driver, and "every network in the house" and "the devices on
+/// this one" are not the same screen.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TabDecl {
+    /// Handed back to the page to say which pane to show. The driver's own vocabulary.
+    pub id: String,
+    /// What the tab says.
+    pub title: String,
+    /// Which of this driver's devices offers it. See [`ActionOn`].
+    #[serde(default)]
+    pub on: ActionOn,
+}
+
 /// Which of a driver's devices an action belongs to.
 ///
 /// An action is a driver's, but it is never true of *all* a driver's devices, and treating it as
@@ -496,6 +524,18 @@ pub enum ActionOn {
     /// coordinator. The default, because it is what a driver with one device means.
     #[default]
     Own,
+    /// An adapter's own device — the process, not a radio under it. Everything true of the
+    /// stack rather than of one network: how many radios there are, what the driver can
+    /// describe, whether the child process is up.
+    ///
+    /// Distinct from [`Self::Own`], which covers this device *and* the radios, because a
+    /// Zigbee adapter and a Zigbee coordinator are the same driver id and nothing else tells
+    /// them apart. Offering "open the network" on the adapter is offering a button with no
+    /// radio behind it.
+    Adapter,
+    /// One radio under an adapter — a Zigbee coordinator, a Z-Wave controller. The device a
+    /// mesh actually hangs off.
+    Coordinator,
     /// Any device the adapter surfaced behind it, whatever kind. `remove_node` is this: it makes
     /// sense for every node and for none of the coordinators.
     Node,
@@ -511,6 +551,8 @@ impl<'de> Deserialize<'de> for ActionOn {
         let s = String::deserialize(d)?;
         Ok(match s.as_str() {
             "own" | "self" => ActionOn::Own,
+            "adapter" => ActionOn::Adapter,
+            "coordinator" | "radio" => ActionOn::Coordinator,
             "node" => ActionOn::Node,
             _ => ActionOn::Proxy(s),
         })
@@ -521,6 +563,8 @@ impl Serialize for ActionOn {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(match self {
             ActionOn::Own => "own",
+            ActionOn::Adapter => "adapter",
+            ActionOn::Coordinator => "coordinator",
             ActionOn::Node => "node",
             ActionOn::Proxy(p) => p,
         })
@@ -777,6 +821,9 @@ pub struct Manifest {
     /// Driver-specific actions. See [`ActionDecl`] for why these are not proxy commands.
     #[serde(default)]
     pub action: Vec<ActionDecl>,
+    /// Panes the driver's own page offers, for the configurator's tab strip. See [`TabDecl`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tab: Vec<TabDecl>,
     /// Present if this driver is a separate process. See [`AdapterDecl`].
     #[serde(default)]
     pub adapter: Option<AdapterDecl>,
