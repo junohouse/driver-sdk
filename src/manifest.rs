@@ -763,7 +763,6 @@ pub struct ControlDecl {
     pub probe: Option<Probe>,
 }
 
-
 /// What to send to something that might be this driver's hardware, and what proves it is.
 ///
 /// The point is to be *sure*. An open port says only that something is listening on the number
@@ -1061,8 +1060,6 @@ impl Manifest {
         self.driver.product.as_deref().unwrap_or(&self.driver.name)
     }
 
-
-
     pub fn control(&self, id: LocalId) -> Option<&ControlDecl> {
         self.control.iter().find(|c| c.id == id)
     }
@@ -1221,7 +1218,10 @@ impl Manifest {
         for p in &self.proxy {
             for alt in &p.alternates {
                 if registry.get(alt).is_none() {
-                    errs.push(format!("proxy {}: `{alt}` is not a proxy in this core", p.id));
+                    errs.push(format!(
+                        "proxy {}: `{alt}` is not a proxy in this core",
+                        p.id
+                    ));
                 }
                 if *alt == p.ty {
                     errs.push(format!(
@@ -1286,8 +1286,7 @@ impl Manifest {
                         errs.push(format!(
                             "control {}: `{field}` means nothing on a `{:?}` connection — \
                              nothing opens a socket for it",
-                            c.id,
-                            c.kind
+                            c.id, c.kind
                         ));
                     }
                 }
@@ -1446,10 +1445,7 @@ mod id_tests {
         )
         .expect("manifest with a probe should parse");
 
-        let probe = m.control[0]
-            .probe
-            .as_ref()
-            .expect("probe should be there");
+        let probe = m.control[0].probe.as_ref().expect("probe should be there");
         let send = probe.send.as_deref().unwrap();
         assert!(
             send.ends_with('\n'),

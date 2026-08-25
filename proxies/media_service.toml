@@ -46,6 +46,11 @@ is_pushed = { type = "bool", default = true }
 # one queue in four rooms.
 has_multiroom = { type = "bool", default = false }
 
+# Whether the service can resolve a spoken title/artist into a stable playable URI. Search is
+# deliberately service-side: providers and their catalogs belong to Music Assistant, while Juno
+# only stores the selected result and chooses a room output when playback begins.
+has_search = { type = "bool", default = false }
+
 [notifications.service_changed]
 title = "Service changed"
 doc = "What this service is and what it is called, after setup or an edit."
@@ -70,6 +75,14 @@ params.at = { type = "string", optional = true, doc = "Requested start instant; 
 params.title = { type = "string", optional = true }
 params.artist = { type = "string", optional = true }
 params.artwork = { type = "string", optional = true }
+
+[commands.search]
+title = "Search media providers"
+requires = "has_search"
+params.token = { type = "string", optional = true, doc = "Echoed on the matching search_results" }
+params.query = { type = "string" }
+params.limit = { type = "u32", optional = true }
+params.media_types = { type = "string", optional = true, doc = "JSON array such as [\"track\",\"playlist\"]" }
 
 [commands.join]
 title = "Join outputs"
@@ -101,6 +114,13 @@ params.online = { type = "bool" }
 [notifications.outputs_changed]
 title = "Allowed outputs changed"
 params.outputs = { type = "string", doc = "JSON array of configured output status objects" }
+
+[notifications.search_results]
+title = "Media search results"
+requires = "has_search"
+params.token = { type = "string", optional = true }
+params.items = { type = "json", doc = "Playable results with stable id, name, subtitle and metadata" }
+params.total = { type = "u32", optional = true }
 
 [state]
 protocol = { title = "Protocol", type = "string" }
