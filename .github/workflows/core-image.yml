@@ -1,0 +1,30 @@
+name: rebuild Core image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask Core to rebuild
+        env:
+          TOKEN: ${{ secrets.JUNO_BUILD_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::notice::JUNO_BUILD_TOKEN is not configured; Core rebuild was skipped"
+            exit 0
+          fi
+          payload=$(printf '{"event_type":"driver-sdk-updated","client_payload":{"sha":"%s"}}' "$GITHUB_SHA")
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $TOKEN" \
+            https://api.github.com/repos/junohouse/core/dispatches \
+            --data "$payload"
