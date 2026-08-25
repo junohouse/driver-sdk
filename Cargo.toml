@@ -51,6 +51,12 @@ required-features = ["pack"]
 name = "proxies"
 required-features = ["contracts"]
 
+# `validate` checks a manifest against the real proxy contracts, so the pane rules are only
+# reachable with them compiled in.
+[[test]]
+name = "panes"
+required-features = ["contracts"]
+
 [features]
 default = []
 # The proxy contracts and the manifest format: everything needed to check that a driver

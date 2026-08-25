@@ -506,6 +506,93 @@ pub struct TabDecl {
     /// Which of this driver's devices offers it. See [`ActionOn`].
     #[serde(default)]
     pub on: ActionOn,
+    /// What the configurator should draw, when the driver has not shipped a page.
+    ///
+    /// Empty means "render `ui/index.html` on this pane" — the escape hatch, for a driver whose
+    /// screen is genuinely a program: a mesh map and a table of three thousand converters is not
+    /// something to express in a manifest, and pretending otherwise produces a schema that grows
+    /// a field per driver until it is a worse programming language.
+    ///
+    /// Everything else should be here. A driver that describes its screen gets core's own
+    /// components drawing it — the same cards, the same grid, the same palette — which means it
+    /// matches the app for nothing, keeps matching when the app moves, and costs the driver
+    /// author no HTML, no polling, and no way to get any of it wrong.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub block: Vec<BlockDecl>,
+}
+
+/// One thing on a declared pane.
+///
+/// Four kinds, chosen because they are what every driver page written here has turned out to be:
+/// a handful of readings, a list of something, the buttons, and the sentence explaining what the
+/// buttons do. A fifth is a decision to take when a driver needs one, not before.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum BlockDecl {
+    /// A row of readings — the shape of the summary at the top of every device pane.
+    Stats {
+        #[serde(default)]
+        title: String,
+        field: Vec<FieldDecl>,
+    },
+    /// A list of something the driver holds. `from` must resolve to an array.
+    Table {
+        #[serde(default)]
+        title: String,
+        from: String,
+        column: Vec<ColumnDecl>,
+    },
+    /// Buttons for actions this driver declares. Named rather than "all of them", because the
+    /// order buttons appear in is a judgement about which one somebody reaches for.
+    Actions {
+        #[serde(default)]
+        title: String,
+        #[serde(default)]
+        action: Vec<String>,
+    },
+    /// What the pane is for, in the driver's own words. The paragraph under the buttons that
+    /// says what happens when you press one.
+    Text {
+        #[serde(default)]
+        title: String,
+        body: String,
+    },
+}
+
+/// Where a value comes from, and what to call it.
+///
+/// Three sources, and they are the three things core already holds about a device: what it last
+/// reported, what somebody configured, and whatever its adapter published about itself.
+///
+///   `state.<key>`       a key on this device's own binding — `on`, `level`, `temperature`
+///   `property.<name>`   a property as resolved for it, inherited from a bridge included
+///   `detail.<path>`     a dotted path into the adapter's published detail, for a coordinator
+///
+/// A path that resolves to nothing draws an em dash rather than an error: a radio that has not
+/// reported yet and a driver with a typo look the same from here, and neither is worth a red box
+/// in the middle of a device pane. The typo is caught at install instead — see `validate`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldDecl {
+    pub from: String,
+    pub label: String,
+    /// Appended to the value. `°C`, `%`, `dBm`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub unit: String,
+    /// How to draw it: `text` (the default), `since` for a timestamp to render as an age,
+    /// `bool` for a yes/no, `bytes` for a size.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub format: String,
+}
+
+/// One column of a declared table. `path` is relative to each row of the array `from` named.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ColumnDecl {
+    pub path: String,
+    pub label: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub format: String,
 }
 
 /// Which of a driver's devices an action belongs to.
@@ -568,6 +655,22 @@ impl Serialize for ActionOn {
             ActionOn::Node => "node",
             ActionOn::Proxy(p) => p,
         })
+    }
+}
+
+/// Whether a declared field or table names a source core can resolve.
+///
+/// The three prefixes are checked, not the rest: `state.level` on a device with no level is a
+/// dash, and so it should be — a battery sensor that has not woken yet has no reading and that
+/// is not a manifest error. What is an error is `sate.level`, which would be a dash for ever.
+fn check_source(from: &str) -> Result<(), String> {
+    let (source, rest) = from.split_once('.').unwrap_or((from, ""));
+    match source {
+        "state" | "property" | "detail" if !rest.is_empty() => Ok(()),
+        "state" | "property" | "detail" => Err(format!("`{from}` names no key")),
+        other => Err(format!(
+            "`{from}` reads from `{other}`, which is not one of state, property or detail"
+        )),
     }
 }
 
@@ -989,6 +1092,56 @@ impl Manifest {
                  an adapter's code runs in its own process, so set runtime = \"adapter\""
             )),
             _ => {}
+        }
+
+        // A declared pane is checked here for the same reason an action is: nothing else ever
+        // looks at it. A `from` naming a source that does not exist draws an em dash for ever,
+        // which is indistinguishable from a radio that has not reported — so the typo has to be
+        // caught at install, where somebody is looking at the driver they just wrote.
+        let mut tab_ids = BTreeSet::new();
+        for t in &self.tab {
+            if !tab_ids.insert(t.id.as_str()) {
+                errs.push(format!("duplicate tab `{}`", t.id));
+            }
+            if t.id.is_empty() || t.title.is_empty() {
+                errs.push(format!("tab `{}` needs an id and a title", t.id));
+            }
+            for block in &t.block {
+                match block {
+                    BlockDecl::Stats { field, .. } => {
+                        for f in field {
+                            if let Err(e) = check_source(&f.from) {
+                                errs.push(format!("tab `{}`: {e}", t.id));
+                            }
+                        }
+                    }
+                    BlockDecl::Table { from, column, .. } => {
+                        if let Err(e) = check_source(from) {
+                            errs.push(format!("tab `{}`: {e}", t.id));
+                        }
+                        if column.is_empty() {
+                            errs.push(format!("tab `{}`: a table with no columns", t.id));
+                        }
+                    }
+                    // Named rather than "every action", so this catches the rename that would
+                    // otherwise leave a button drawn against nothing.
+                    BlockDecl::Actions { action, .. } => {
+                        for name in action {
+                            if !self.action.iter().any(|a| &a.name == name) {
+                                errs.push(format!(
+                                    "tab `{}` offers `{name}`, which this driver does not declare",
+                                    t.id
+                                ));
+                            }
+                        }
+                    }
+                    BlockDecl::Text { body, .. } => {
+                        if body.trim().is_empty() {
+                            errs.push(format!("tab `{}`: a text block with nothing in it", t.id));
+                        }
+                    }
+                }
+            }
         }
 
         // Actions are validated against this manifest rather than a shared contract, so this is
