@@ -802,6 +802,31 @@ pub struct ControlDecl {
     /// round trips, an event subscription that only delivers while the socket is up.
     #[serde(default)]
     pub keepalive: bool,
+    /// What to write down a held connection that has gone quiet, so the far side does not
+    /// decide nobody is there.
+    ///
+    /// A device that hangs up on an idle client is common and is not a fault: a Caséta bridge
+    /// does it within minutes. Core notices and dials again, but every push that happens in the
+    /// gap is gone, and a subscription-shaped protocol is exactly the kind whose whole value is
+    /// in what arrives unasked. So the connection is not left idle.
+    ///
+    /// Declared rather than inferred, because only the driver knows what is harmless to say. A
+    /// LEAP bridge answers `{"CommuniqueType":"ReadRequest","Header":{"Url":"/server/1/status/ping"}}`
+    /// with a version and nothing else; a telnet amplifier would want something else entirely,
+    /// and core guessing would eventually guess a command that moves something.
+    ///
+    /// Only for a `keepalive` connection — there is nothing to keep alive otherwise. A newline
+    /// is appended if the payload does not end in one, which is what every line protocol that
+    /// has needed this so far expects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heartbeat: Option<String>,
+    /// How long a `heartbeat` connection may be quiet before one is sent. Seconds.
+    ///
+    /// Well under whatever the far side's patience is, and not so often that it is traffic. A
+    /// Caséta bridge tolerates minutes; sixty seconds is comfortably inside that and is one
+    /// message a minute per device.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heartbeat_secs: Option<u32>,
     /// This connection carries framed bytes, not lines of text.
     ///
     /// Set it and reads come back as `rx { bytes }` — a JSON array — with core doing no framing
@@ -1357,6 +1382,8 @@ impl Manifest {
                     ("username", c.username.is_some()),
                     ("password", c.password.is_some()),
                     ("probe", c.probe.is_some()),
+                    ("heartbeat", c.heartbeat.is_some()),
+                    ("heartbeat_secs", c.heartbeat_secs.is_some()),
                 ] {
                     if set {
                         errs.push(format!(
@@ -1366,6 +1393,23 @@ impl Manifest {
                         ));
                     }
                 }
+            }
+        }
+        // A heartbeat on a connection nothing holds open is a write into a socket that is
+        // opened for it and closed again — which is not a heartbeat, it is a poll, and there is
+        // already a `Poll interval` for that.
+        for c in &self.control {
+            if c.heartbeat.is_some() && !c.keepalive {
+                errs.push(format!(
+                    "control {}: `heartbeat` needs `keepalive` — there is nothing to keep alive                      on a connection that is not held open",
+                    c.id
+                ));
+            }
+            if c.heartbeat_secs.is_some() && c.heartbeat.is_none() {
+                errs.push(format!(
+                    "control {}: `heartbeat_secs` without `heartbeat` — an interval for nothing",
+                    c.id
+                ));
             }
         }
         for p in &self.property {
