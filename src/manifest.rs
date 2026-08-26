@@ -151,6 +151,34 @@ pub struct DriverMeta {
     pub name: String,
     #[serde(default)]
     pub manufacturer: String,
+    /// A link to the maker's own published logo. Empty for almost every driver.
+    ///
+    /// **A link, never a copy.** The same rule the app catalog states in its own header — "this
+    /// repository redistributes no logos" — and for the same reason: an Apple TV, a Roku and a
+    /// VIZIO are *trademarks*, not artwork anybody is free to bundle. Packaging one into a
+    /// `.junodrv` puts a copy of somebody's mark in an artifact the registry distributes, in as
+    /// many copies as there are drivers for that make, each going stale on its own.
+    ///
+    /// So the driver says where the logo *is* and the controller fetches it: `GET
+    /// /artwork?driver=<id>` dereferences this, caches the bytes, and serves them to every screen
+    /// in the house. One copy, on the controller, that a phone off the house network can still
+    /// reach — and nothing shipped that anybody has to have a licence for.
+    ///
+    /// `https://` only, and it is not advisory: core refuses anything else. A manifest is authored
+    /// by whoever wrote the driver and arrives through the registry, so this is a URL a controller
+    /// will fetch on somebody's home network — the scheme check and the verified-certificate agent
+    /// are what keep it from being a way to point a controller at the LAN.
+    ///
+    /// **This is the make, not the service.** A Roku's logo belongs here; Netflix's belongs in the
+    /// app catalog, which knows a service across every box that carries it. A screen asking for
+    /// what a television is *showing* wants the second one.
+    ///
+    /// Adding it to a manifest raises the floor: `deny_unknown_fields` above means a controller
+    /// older than this field refuses the whole driver rather than ignoring the line. Nothing here
+    /// is versioned — see the SDK note in `core/CLAUDE.md` — so the answer is to update the
+    /// controller, but a driver that must run on an old one should leave this out.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon: String,
     pub version: String,
     pub runtime: Runtime,
     #[serde(default = "default_api")]
