@@ -816,6 +816,20 @@ pub struct ControlDecl {
     pub binary: bool,
     #[serde(default)]
     pub tls: bool,
+    /// This device's TLS is older than forward secrecy.
+    ///
+    /// It offers only the RSA key-exchange suites — `TLS_RSA_WITH_AES_256_GCM_SHA384` and its
+    /// neighbours — which rustls does not implement and, being without forward secrecy, never
+    /// will. Declaring it moves this one connection onto the platform's own TLS, which still
+    /// speaks them; everything else keeps the modern stack.
+    ///
+    /// An IQ Panel's MQTT broker is one. It refuses every ECDHE and DHE suite offered and the
+    /// handshake fails before the client certificate is looked at, which reads as a rejected
+    /// certificate and is not one. Declare it only against hardware measured to need it: it is
+    /// a downgrade, and the reason to write it in the manifest rather than fall back to it
+    /// quietly is that somebody should have had to decide.
+    #[serde(default)]
+    pub legacy_tls: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
