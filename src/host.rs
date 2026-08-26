@@ -169,6 +169,32 @@ pub enum HostCall {
     BorrowedScenes {
         scenes: Vec<BorrowedSceneSnapshot>,
     },
+    /// Ask to be woken up later.
+    ///
+    /// A driver has no clock. It runs when something happens to it — a command, a frame, a
+    /// bind — and between those it does not exist, so anything measured in elapsed time is
+    /// beyond it. That is not a gap worth closing with a thread; it is one host call.
+    ///
+    /// The case it was written for is a keypad that reports a press and a release and nothing
+    /// else. Lutron's does, and leaves the decision of what counts as a hold to whoever is
+    /// listening — which no driver could make, because none of them could tell how long a
+    /// button had been down. With this it can: ask for a wake-up on the press, and whether it
+    /// arrives before the release is the whole question.
+    ///
+    /// Comes back through [`DriverModule::on_event`] with the note `timer` and `note` in its
+    /// arguments — the driver's own string, handed back unread. Deliberately not a new
+    /// `DriverModule` method: an older driver that never asks is never woken, so nothing has to
+    /// be gated on a manifest flag.
+    ///
+    /// One outstanding wake-up per `note` per device: asking again with the same note moves it
+    /// rather than queuing a second, which is what makes "restart the clock on every press"
+    /// the natural thing to write instead of a leak. Core's tick decides the resolution — tens
+    /// of milliseconds, not microseconds — so this is for human-scale timing, and a driver that
+    /// needs a deadline tighter than a thumb is asking the wrong layer.
+    After {
+        ms: u32,
+        note: String,
+    },
     /// A Wake-on-LAN magic packet, broadcast on core's behalf.
     ///
     /// The one case a driver dials nobody: the device is asleep and there is no socket to hold
