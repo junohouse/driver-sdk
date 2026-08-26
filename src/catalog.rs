@@ -33,6 +33,18 @@ pub struct Entry {
     pub name: String,
     #[serde(default)]
     pub manufacturer: String,
+    /// A link to the maker's published logo — from [`crate::manifest::DriverMeta::icon`].
+    ///
+    /// In the index because half of what a catalog lists is not installed, and a driver that has
+    /// not been installed has no manifest on the controller to read. Without this the browse
+    /// shelf is rows of generic glyphs until somebody adds a driver, and the mark only appears
+    /// afterwards — which is the wrong way round for a screen whose entire job is helping
+    /// somebody recognise the box in front of them.
+    ///
+    /// A link, never a copy, exactly as in the manifest. Nothing in the index or in a `.junodrv`
+    /// carries a trademark; the controller dereferences this and serves the bytes itself.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub icon: String,
     /// Driver id of the bridge these devices live behind, straight from the manifest's
     /// [`crate::driver::manifest::DriverMeta::parent`].
     ///

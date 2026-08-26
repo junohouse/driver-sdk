@@ -132,6 +132,7 @@ fn run() -> anyhow::Result<()> {
                     id: m.driver.id.clone(),
                     name: m.driver.name.clone(),
                     manufacturer: m.driver.manufacturer.clone(),
+                    icon: m.driver.icon.clone(),
                     parent: m.driver.parent.clone(),
                     product: m.driver.product.clone(),
                     // Resolved rather than copied: a driver that declared no `kind` still has
