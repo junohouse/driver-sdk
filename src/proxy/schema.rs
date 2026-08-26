@@ -174,6 +174,23 @@ pub struct Signature {
     /// Name of a `bool` capability. Absent from a resolved contract unless the driver
     /// declared this capability true.
     pub requires: Option<String>,
+    /// Driven by the house, never by a person at a screen.
+    ///
+    /// Most commands are a button somewhere: `off` on a light, `select_source` on a receiver.
+    /// Some are not, and offering them anyway produces a control nobody can usefully press — a
+    /// media service's `play` takes a JSON array of the service's own private player ids and a
+    /// resolved media URI, which is something a room works out and a person cannot type.
+    ///
+    /// So the contract says which. The command still exists, is still dispatched, and is still how
+    /// core drives the device; what changes is that no screen draws a field for it. A device whose
+    /// every command is internal has no controls at all, which is the honest answer for a service:
+    /// it is configured by putting outputs in rooms, not by pressing it.
+    ///
+    /// On the contract rather than in the configurator, because it is a fact about the class. A
+    /// list of command names to hide, kept in a screen, is a list that goes stale the first time a
+    /// contract gains one and has to be repeated in every other screen.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub internal: bool,
     #[serde(default)]
     pub params: BTreeMap<String, Param>,
 }

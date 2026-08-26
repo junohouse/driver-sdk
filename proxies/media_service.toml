@@ -59,6 +59,7 @@ params.name = { type = "string", optional = true, doc = "What outputs advertise 
 
 [commands.sync_outputs]
 title = "Synchronize project outputs"
+internal = true
 doc = """
 Replace the service's allowed output set. `outputs` is a JSON array whose entries contain
 `player_id`, `binding`, `device`, `name`, and `room`. The ids are service-private routing keys;
@@ -69,6 +70,7 @@ params.outputs = { type = "string", doc = "JSON array of project media-output ro
 
 [commands.play]
 title = "Play on outputs"
+internal = true
 params.outputs = { type = "string", doc = "JSON array of allowed service-private player ids, leader first" }
 params.url = { type = "string", doc = "Music Assistant URI or a URL it can resolve" }
 params.at = { type = "string", optional = true, doc = "Requested start instant; synchronized services may use their own stream clock" }
@@ -86,25 +88,30 @@ params.media_types = { type = "string", optional = true, doc = "JSON array such 
 
 [commands.join]
 title = "Join outputs"
+internal = true
 params.leader = { type = "string" }
 params.outputs = { type = "string", doc = "JSON array of outputs to add" }
 
 [commands.leave]
 title = "Leave outputs"
+internal = true
 params.leader = { type = "string", doc = "Current leader before this change" }
 params.remaining = { type = "string", doc = "JSON array of outputs that remain, new leader first" }
 params.removed = { type = "string", doc = "JSON array of outputs leaving" }
 
 [commands.pause]
 title = "Pause queue"
+internal = true
 params.leader = { type = "string" }
 
 [commands.resume]
 title = "Resume queue"
+internal = true
 params.leader = { type = "string" }
 
 [commands.stop]
 title = "Stop queue"
+internal = true
 params.leader = { type = "string" }
 
 [notifications.online_changed]
