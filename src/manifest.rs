@@ -454,6 +454,23 @@ pub struct DockerDecl {
     pub volumes: Vec<String>,
     #[serde(default)]
     pub env: std::collections::BTreeMap<String, String>,
+    /// Where inside the container the service keeps its own accounts.
+    ///
+    /// For the one failure a controller cannot talk its way out of. A service that insists on an
+    /// account — and will not let anybody make a second one — locks out a controller that has lost
+    /// the credential it made: it refuses every call, and it refuses to be set up again because it
+    /// already has been. The only way back in is to remove what is holding that account.
+    ///
+    /// Declared, because *which* files those are is the service's business and not the
+    /// controller's. And declared separately from the volume so that the way back in does not have
+    /// to be "delete everything": a media server's accounts and its library live in the same
+    /// volume, and a house should not lose the library to fix a password.
+    ///
+    /// Absolute paths inside the container, each of which must sit under one of [`Self::volumes`]
+    /// — a path outside them lives in a layer that is discarded anyway, so naming one is a
+    /// mistake rather than a permission.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub credentials: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
