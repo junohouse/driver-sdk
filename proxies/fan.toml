@@ -1,0 +1,64 @@
+name = "fan"
+title = "Fan"
+category = "environment"
+description = """
+A fan somebody chooses a speed on — a ceiling fan behind a speed controller, an extractor, a
+whole-house fan.
+
+Not a `switch` with a fan wired to it, and the difference is not pedantry: a switch is on or
+off, so "turn the fan down" has nowhere to land and a rule that says `medium` cannot be written
+at all. A load whose only two states are on and off is a `switch` even when the thing on the end
+of it spins.
+
+Speeds are named rather than numbered because that is how every fan controller that exists
+reports them, and the names are not the same set twice: Lutron offers Off/Low/Medium/MediumHigh/
+High, a three-speed pull-chain replacement offers three, and a DC motor offers ten. So the set
+is a capability the device fills in and everything downstream reads, rather than a vocabulary
+this file invents and every driver then has to lie about.
+"""
+
+[capabilities]
+# Slowest first, and without `off` in it: stopping is a command, not a speed, and a list with
+# `off` at the front makes every "next speed up" walk one place wrong.
+speeds = { type = "string_list", default = ["low", "medium", "high"], doc = "The speeds this fan actually has, slowest first. Not including off." }
+supports_reverse = { type = "bool", default = false, doc = "Can run in reverse — a winter/summer switch on the motor rather than on the wall" }
+
+[commands.on]
+title = "Turn on"
+doc = "To the speed it was last on, or the slowest it has if it has never run."
+[commands.off]
+title = "Turn off"
+[commands.toggle]
+title = "Toggle"
+
+[commands.set_speed]
+title = "Set speed"
+params.speed = { type = "string", values_from = "speeds" }
+
+[commands.set_reverse]
+title = "Reverse"
+requires = "supports_reverse"
+params.reverse = { type = "bool" }
+
+[notifications.speed_changed]
+title = "Speed changed"
+doc = "The speed it is running at now. A fan that has stopped reports `on = false` rather than a speed nobody named."
+params.speed = { type = "string" }
+params.on = { type = "bool" }
+
+[notifications.reverse_changed]
+requires = "supports_reverse"
+params.reverse = { type = "bool" }
+
+[notifications.online_changed]
+title = "Reachability changed"
+params.online = { type = "bool" }
+
+[state]
+# Both, deliberately. `on` is what a room's "everything off" reads and what a tile needs to know
+# whether to look lit; `speed` is what somebody actually set and what a rule compares against.
+# Deriving one from the other at every consumer is how they end up disagreeing.
+on      = { title = "On", type = "bool" }
+speed   = { title = "Speed", type = "string", from = "speed" }
+reverse = { type = "bool" }
+online  = { title = "Reachable", type = "bool" }
