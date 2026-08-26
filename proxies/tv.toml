@@ -14,6 +14,14 @@ has_discrete_volume = { type = "bool", default = false, doc = "Can be set to an 
 has_discrete_mute   = { type = "bool", default = false }
 has_volume          = { type = "bool", default = true }
 has_channel_control = { type = "bool", default = false, doc = "Built-in tuner" }
+has_built_in_sources = { type = "bool", default = false, doc = """
+The set can be told to show one of its own sources — AirPlay, a built-in free-TV app — and not
+only a jack.
+
+Separate from having them at all. A television lists AirPlay whether or not anything can switch
+it there, and `built_in_sources` is that list; this is the driver saying it knows how. Without
+it the list is a readout, which is still worth drawing: a set sitting on AirPlay should say so.
+""" }
 volume_max          = { type = "u32",  default = 100 }
 has_hold            = { type = "bool", default = false, doc = """
 Volume can be held down and released, rather than only stepped. See `hold`.
@@ -32,6 +40,20 @@ supports_arc        = { type = "bool", default = false }
 [commands.set_input]
 doc = "Select the input carrying a given signal connection. Issued by the pathfinder, not usually by a person."
 params.connection = { type = "u32", values_from = "connections", doc = "Signal connection id. The choices are the inputs this set reported, not the ones the manifest guessed." }
+
+[commands.select_source]
+doc = """
+Show one of the set's own sources rather than a jack.
+
+`source` is one of `built_in_sources`, by the name the set shows — the same string
+`source_changed` reports, so what a screen draws and what it sends back are one vocabulary.
+
+Not `set_input`, and the difference is the whole point: that takes a signal connection, which is
+something an installer wired a box into and the pathfinder solves through. None of these is one.
+A room is never *routed* to AirPlay; somebody is standing in front of the television choosing it.
+"""
+requires = "has_built_in_sources"
+params.source = { type = "string", values_from = "built_in_sources" }
 
 [commands.pulse_input]
 doc = "Cycle to the next input. The fallback when has_discrete_input is false."
